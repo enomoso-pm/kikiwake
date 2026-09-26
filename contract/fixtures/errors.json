@@ -1,0 +1,46 @@
+{
+ "file_not_found": {
+  "code": "file_not_found",
+  "message": "ファイルが見つかりません。移動や削除をしていないか確かめてください。"
+ },
+ "unsupported_format": {
+  "code": "unsupported_format",
+  "message": "この形式には対応していません。対応している形式: mp4・mov・m4a・mp3・wav"
+ },
+ "no_audio_track": {
+  "code": "no_audio_track",
+  "message": "このファイルには音声が入っていません。"
+ },
+ "disk_full": {
+  "code": "disk_full",
+  "message": "空き容量が足りません。あと約2GB の空きが要ります。"
+ },
+ "model_missing": {
+  "code": "model_missing",
+  "message": "モデルが見つかりません。初回セットアップからやり直してください。"
+ },
+ "network_unreachable": {
+  "code": "network_unreachable",
+  "message": "モデルのダウンロード先（huggingface.co）に接続できません。ネットワークを確かめてください。"
+ },
+ "download_failed": {
+  "code": "download_failed",
+  "message": "ダウンロードが途中で止まりました。再開すると続きから取得します。"
+ },
+ "checksum_mismatch": {
+  "code": "checksum_mismatch",
+  "message": "ダウンロードしたファイルが壊れていました。もう一度取得してください。"
+ },
+ "engine_failed": {
+  "code": "engine_failed",
+  "message": "書き起こしの途中で問題が起きました。もう一度実行してください。続く場合は詳細をコピーして連絡してください。"
+ },
+ "out_of_memory": {
+  "code": "out_of_memory",
+  "message": "メモリが足りなくなりました。他のアプリを閉じてから、もう一度実行してください。"
+ },
+ "cancelled": {
+  "code": "cancelled",
+  "message": "中止しました。話者の判定結果は残してあるので、やり直すと続きから始めます。"
+ }
+}

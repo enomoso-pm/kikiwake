@@ -1,0 +1,260 @@
+{
+ "title": "要件レビュー_合成",
+ "source": "/Users/example/Movies/要件レビュー_合成.wav",
+ "durationSec": 163.91,
+ "createdAt": "2026-09-25",
+ "diarizer": "Nemotron 3 Diarization",
+ "asr": "Whisper large-v3（whisper.cpp）",
+ "named": true,
+ "talkTime": [
+  {
+   "speaker": "松本",
+   "sec": 57.44,
+   "share": 0.3927
+  },
+  {
+   "speaker": "田中",
+   "sec": 35.25,
+   "share": 0.241
+  },
+  {
+   "speaker": "佐藤",
+   "sec": 29.13,
+   "share": 0.1991
+  },
+  {
+   "speaker": "鈴木",
+   "sec": 24.46,
+   "share": 0.1672
+  }
+ ],
+ "utterances": [
+  {
+   "id": "u0",
+   "start": 1.46,
+   "end": 11.14,
+   "label": "話者A",
+   "speaker": "松本",
+   "text": "本日はお集まりいただきありがとうございますBMの松本です今日は予約システム刷新の要件レビューを行います",
+   "overlap": false
+  },
+  {
+   "id": "u1",
+   "start": 12.06,
+   "end": 16.5,
+   "label": "話者B",
+   "speaker": "佐藤",
+   "text": "よろしくお願いします発注側の佐藤ですエンジニア",
+   "overlap": false
+  },
+  {
+   "id": "u3",
+   "start": 23.32,
+   "end": 33.04,
+   "label": "話者A",
+   "speaker": "松本",
+   "text": "当していますでは最初に前回の宿題事項から確認します田中さんAPIの性能評価はいかがでしたか",
+   "overlap": false
+  },
+  {
+   "id": "u4",
+   "start": 33.58,
+   "end": 46.34,
+   "label": "話者C",
+   "speaker": "田中",
+   "text": "はいピーク時を想定して毎秒200件で負荷をかけたところ平均応答は180ミリ秒でした目標の300ミリ秒は十分に下回っています",
+   "overlap": false
+  },
+  {
+   "id": "u5",
+   "start": 46.9,
+   "end": 47.06,
+   "label": "話者B",
+   "speaker": "佐藤",
+   "text": "なるほど",
+   "overlap": false
+  },
+  {
+   "id": "u6",
+   "start": 47.64,
+   "end": 56.23,
+   "label": "話者C",
+   "speaker": "田中",
+   "text": "ただし予約の確定処理だけは外部決済との連携があるので最大で1.5秒ほどかかるケースがありました",
+   "overlap": false
+  },
+  {
+   "id": "u7",
+   "start": 56.98,
+   "end": 62.54,
+   "label": "話者B",
+   "speaker": "佐藤",
+   "text": "1.5秒ですか利用者から見て待たされている感じになりませんか",
+   "overlap": false
+  },
+  {
+   "id": "u8",
+   "start": 63.02,
+   "end": 76.62,
+   "label": "話者D",
+   "speaker": "鈴木",
+   "text": "そこは画面側で工夫できます確定ボタンを押した直後に進行状況を表示して完了したら結果画面に切り替える形にすれば体感の待ち時間はかなり短くなります",
+   "overlap": false
+  },
+  {
+   "id": "u9",
+   "start": 77.18,
+   "end": 82.16,
+   "label": "話者A",
+   "speaker": "松本",
+   "text": "いいですね鈴木さんその案で画面の試作をお願いできます",
+   "overlap": false
+  },
+  {
+   "id": "u10",
+   "start": 82.16,
+   "end": 85.5,
+   "label": "話者D",
+   "speaker": "鈴木",
+   "text": "かはい来週の水曜日までに用意します",
+   "overlap": false
+  },
+  {
+   "id": "u11",
+   "start": 86.42,
+   "end": 93.34,
+   "label": "話者B",
+   "speaker": "佐藤",
+   "text": "一点確認させてくださいキャンセルの締め切りは先日の18時で合意していましたよね",
+   "overlap": false
+  },
+  {
+   "id": "u12",
+   "start": 94.06,
+   "end": 96.66,
+   "label": "話者A",
+   "speaker": "松本",
+   "text": "はい前回そのように合意しています補足する",
+   "overlap": true
+  },
+  {
+   "id": "u13",
+   "start": 96.66,
+   "end": 101.46,
+   "label": "話者C",
+   "speaker": "田中",
+   "text": "と締め切りの時刻は管理画面から変更できるようにしておきます",
+   "overlap": false
+  },
+  {
+   "id": "u14",
+   "start": 102.26,
+   "end": 106.02,
+   "label": "話者B",
+   "speaker": "佐藤",
+   "text": "それは助かります店舗によって運用が違うので",
+   "overlap": false
+  },
+  {
+   "id": "u15",
+   "start": 106.84,
+   "end": 115.46,
+   "label": "話者A",
+   "speaker": "松本",
+   "text": "では決定事項としてキャンセル締め切りは前日18時を初期値とし管理画面で変更可能とします",
+   "overlap": false
+  },
+  {
+   "id": "u16",
+   "start": 115.76,
+   "end": 116.44,
+   "label": "話者C",
+   "speaker": "田中",
+   "text": "了解です。",
+   "overlap": false
+  },
+  {
+   "id": "u17",
+   "start": 117.02,
+   "end": 123.84,
+   "label": "話者D",
+   "speaker": "鈴木",
+   "text": "確認ですが、変更した場合、既存の予約にも新しい締め切りが適用されるのでしょうか?",
+   "overlap": false
+  },
+  {
+   "id": "u18",
+   "start": 124.4,
+   "end": 128.56,
+   "label": "話者B",
+   "speaker": "佐藤",
+   "text": "いいえ、既存の予約は予約時点のルールのままにしてください。",
+   "overlap": false
+  },
+  {
+   "id": "u19",
+   "start": 129.24,
+   "end": 134.44,
+   "label": "話者C",
+   "speaker": "田中",
+   "text": "わかりました。予約ごとに締め切りの時刻を保存する設計にします。",
+   "overlap": false
+  },
+  {
+   "id": "u20",
+   "start": 135.8,
+   "end": 151.44,
+   "label": "話者A",
+   "speaker": "松本",
+   "text": "ありがとうございます。最後に次回までの宿題を確認します。田中さんは締め切り設定の詳細設定、鈴木さんは確定画面の試作、佐藤さんには店舗ごとの運用ルールの一覧をお願いします。",
+   "overlap": false
+  },
+  {
+   "id": "u21",
+   "start": 152.0,
+   "end": 155.24,
+   "label": "話者B",
+   "speaker": "佐藤",
+   "text": "承知しました。月曜日にお送りします。",
+   "overlap": false
+  },
+  {
+   "id": "u22",
+   "start": 155.72,
+   "end": 155.8,
+   "label": "話者D",
+   "speaker": "鈴木",
+   "text": "はい。",
+   "overlap": false
+  },
+  {
+   "id": "u23",
+   "start": 156.24,
+   "end": 157.08,
+   "label": "話者C",
+   "speaker": "田中",
+   "text": "承知しました。",
+   "overlap": false
+  },
+  {
+   "id": "u24",
+   "start": 158.22,
+   "end": 161.56,
+   "label": "話者A",
+   "speaker": "松本",
+   "text": "それでは本日はここまでとします。ありがとうございました。",
+   "overlap": false
+  }
+ ],
+ "unresolved": [
+  {
+   "id": "u2",
+   "start": 16.5,
+   "end": 23.32,
+   "label": "不明",
+   "speaker": "不明",
+   "text": "の田中ですよろしくお願いしますデザイナーの鈴木です画面周りを担",
+   "overlap": false
+  }
+ ]
+}

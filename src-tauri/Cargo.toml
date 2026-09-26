@@ -1,0 +1,38 @@
+[package]
+name = "kikiwake"
+version = "0.1.0"
+description = "Kikiwake（聞き分け）: 話者付き文字起こし。処理はすべてこの PC の中で行う"
+edition = "2021"
+publish = false
+
+[lib]
+name = "kikiwake_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+kikiwake-core = { path = "../core" }
+kikiwake-engine = { path = "engine" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+
+# 開発用のビルドの操作役が、画面の中身を画像に撮る（WKWebView の takeSnapshot。src/dev.rs）。製品では使わない。
+# wry と同じ版の部品に、使う機能だけ足している
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "block2", "objc2-app-kit"] }
+
+# 処理の流れ（engine）は Tauri に頼らない別の部品。core は Phase 1 の移植（リポジトリ直下）
+[workspace]
+members = [".", "engine"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true

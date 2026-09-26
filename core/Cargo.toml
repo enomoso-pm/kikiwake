@@ -1,0 +1,15 @@
+[package]
+name = "kikiwake-core"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Kikiwake のロジック: Python 版（merge.py / speakers.py）の移植と、足した処理"
+
+# 外から入れる部品は正規表現と JSON だけにする（WAV の読み書きは Python の wave と同じバイト列にするため自前）。
+# serde_json の float_roundtrip: 既定の小数の読み取りは最後の桁がずれることがあるので、Python と同じく正確に読む。
+# serde_json の preserve_order: JSON のキーの並びを保つ（Python の dict と同じ）。
+[dependencies]
+indexmap = { version = "2", features = ["serde"] }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }

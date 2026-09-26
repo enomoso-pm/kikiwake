@@ -1,0 +1,180 @@
+[
+ {
+  "label": "話者A",
+  "talkSec": 57.44,
+  "share": 0.3927,
+  "utterances": 7,
+  "firstSec": 1.46,
+  "hints": [
+   {
+    "name": "松本",
+    "sources": {
+     "自己紹介": 1
+    }
+   }
+  ],
+  "samples": [
+   {
+    "index": 1,
+    "start": 1.46,
+    "end": 11.14,
+    "text": "本日はお集まりいただきありがとうございますBMの松本です今日は予約システム刷新の要件レビューを行います",
+    "audioPath": "samples/話者A_1.wav"
+   },
+   {
+    "index": 2,
+    "start": 106.84,
+    "end": 115.46,
+    "text": "では決定事項としてキャンセル締め切りは前日18時を初期値とし管理画面で変更可能とします",
+    "audioPath": "samples/話者A_2.wav"
+   },
+   {
+    "index": 3,
+    "start": 158.22,
+    "end": 161.56,
+    "text": "それでは本日はここまでとします。ありがとうございました。",
+    "audioPath": "samples/話者A_3.wav"
+   }
+  ],
+  "warnings": []
+ },
+ {
+  "label": "話者C",
+  "talkSec": 35.25,
+  "share": 0.241,
+  "utterances": 6,
+  "firstSec": 33.58,
+  "hints": [
+   {
+    "name": "田中",
+    "sources": {
+     "自己紹介": 1,
+     "呼びかけ直後": 1
+    }
+   },
+   {
+    "name": "山田",
+    "sources": {
+     "自己紹介": 1
+    }
+   }
+  ],
+  "samples": [
+   {
+    "index": 1,
+    "start": 33.58,
+    "end": 46.34,
+    "text": "はいピーク時を想定して毎秒200件で負荷をかけたところ平均応答は180ミリ秒でした目標の300ミリ秒は十分に下回っています",
+    "audioPath": "samples/話者C_1.wav"
+   },
+   {
+    "index": 2,
+    "start": 47.64,
+    "end": 56.23,
+    "text": "ただし予約の確定処理だけは外部決済との連携があるので最大で1.5秒ほどかかるケースがありました",
+    "audioPath": "samples/話者C_2.wav"
+   },
+   {
+    "index": 3,
+    "start": 129.24,
+    "end": 134.44,
+    "text": "わかりました。予約ごとに締め切りの時刻を保存する設計にします。",
+    "audioPath": "samples/話者C_3.wav"
+   }
+  ],
+  "warnings": [
+   "mixed_voices"
+  ]
+ },
+ {
+  "label": "話者B",
+  "talkSec": 29.13,
+  "share": 0.1991,
+  "utterances": 7,
+  "firstSec": 12.06,
+  "hints": [
+   {
+    "name": "佐藤",
+    "sources": {
+     "自己紹介": 1,
+     "呼びかけ直後": 1
+    }
+   }
+  ],
+  "samples": [
+   {
+    "index": 1,
+    "start": 56.98,
+    "end": 62.54,
+    "text": "1.5秒ですか利用者から見て待たされている感じになりませんか",
+    "audioPath": "samples/話者B_1.wav"
+   },
+   {
+    "index": 2,
+    "start": 86.42,
+    "end": 93.34,
+    "text": "一点確認させてくださいキャンセルの締め切りは先日の18時で合意していましたよね",
+    "audioPath": "samples/話者B_2.wav"
+   },
+   {
+    "index": 3,
+    "start": 124.4,
+    "end": 128.56,
+    "text": "いいえ、既存の予約は予約時点のルールのままにしてください。",
+    "audioPath": "samples/話者B_3.wav"
+   }
+  ],
+  "warnings": []
+ },
+ {
+  "label": "話者D",
+  "talkSec": 24.46,
+  "share": 0.1672,
+  "utterances": 4,
+  "firstSec": 63.02,
+  "hints": [
+   {
+    "name": "鈴木",
+    "sources": {
+     "呼びかけ直後": 1
+    }
+   }
+  ],
+  "samples": [
+   {
+    "index": 1,
+    "start": 63.02,
+    "end": 76.62,
+    "text": "そこは画面側で工夫できます確定ボタンを押した直後に進行状況を表示して完了したら結果画面に切り替える形にすれば体感の待ち時間はかなり短くなりま…",
+    "audioPath": "samples/話者D_1.wav"
+   },
+   {
+    "index": 2,
+    "start": 82.16,
+    "end": 85.5,
+    "text": "かはい来週の水曜日までに用意します",
+    "audioPath": "samples/話者D_2.wav"
+   },
+   {
+    "index": 3,
+    "start": 117.02,
+    "end": 123.84,
+    "text": "確認ですが、変更した場合、既存の予約にも新しい締め切りが適用されるのでしょうか?",
+    "audioPath": "samples/話者D_3.wav"
+   }
+  ],
+  "warnings": []
+ },
+ {
+  "label": "話者E",
+  "talkSec": 1.3,
+  "share": 0.008,
+  "utterances": 1,
+  "firstSec": 88.2,
+  "hints": [],
+  "samples": [],
+  "warnings": [
+   "short_talk"
+  ]
+ }
+]

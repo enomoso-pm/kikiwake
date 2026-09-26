@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全上の問題（脆弱性）
+    url: https://github.com/enomoso-pm/kikiwake/security/advisories/new
+    about: 脆弱性は公開の Issue ではなく、ここから非公開で知らせてください

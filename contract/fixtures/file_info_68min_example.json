@@ -1,0 +1,18 @@
+{
+ "path": "/Users/example/Movies/定例会議_0925.m4a",
+ "name": "定例会議_0925.m4a",
+ "sizeBytes": 35000000,
+ "durationSec": 4068.9,
+ "hasVideo": false,
+ "supported": true,
+ "estimate": {
+  "minSec": 814,
+  "maxSec": 1628
+ },
+ "previous": {
+  "outDir": "/Users/example/Movies/定例会議_0925_文字起こし",
+  "diarizationReusable": true,
+  "processedAt": "2026-09-24",
+  "resultReusable": false
+ }
+}

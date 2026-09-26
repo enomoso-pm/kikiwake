@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Kikiwake の画面に許すこと（アプリの関数の呼び出し・イベント・ドラッグ＆ドロップ）。ファイルの選択画面は外枠の側で開く",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

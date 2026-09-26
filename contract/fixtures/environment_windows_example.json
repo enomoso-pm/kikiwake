@@ -1,0 +1,39 @@
+{
+ "os": "windows",
+ "osVersion": "11 (24H2)",
+ "cpu": "Intel Core i7-13700",
+ "memoryGB": 32,
+ "freeDiskGB": 412.0,
+ "gpu": {
+  "kind": "cuda",
+  "name": "NVIDIA GeForce RTX 4060"
+ },
+ "canRun": true,
+ "checks": [
+  {
+   "id": "os",
+   "level": "ok",
+   "message": "対応しています"
+  },
+  {
+   "id": "cpu",
+   "level": "ok",
+   "message": "対応しています"
+  },
+  {
+   "id": "memory",
+   "level": "ok",
+   "message": "足りています"
+  },
+  {
+   "id": "disk",
+   "level": "ok",
+   "message": "モデルと作業用に足りています"
+  },
+  {
+   "id": "gpu",
+   "level": "ok",
+   "message": "使えます"
+  }
+ ]
+}

@@ -1,0 +1,39 @@
+{
+ "os": "macos",
+ "osVersion": "14.6",
+ "cpu": "Apple M1",
+ "memoryGB": 8,
+ "freeDiskGB": 3.1,
+ "gpu": {
+  "kind": "metal",
+  "name": "Apple M1 GPU（7コア）"
+ },
+ "canRun": false,
+ "checks": [
+  {
+   "id": "os",
+   "level": "ok",
+   "message": "対応しています"
+  },
+  {
+   "id": "cpu",
+   "level": "ok",
+   "message": "対応しています"
+  },
+  {
+   "id": "memory",
+   "level": "warn",
+   "message": "長い録音では、他のアプリを閉じてから実行してください。"
+  },
+  {
+   "id": "disk",
+   "level": "error",
+   "message": "空きが足りません。AI モデルの保存に約 3.2 GB と、作業用の空きが要ります。"
+  },
+  {
+   "id": "gpu",
+   "level": "ok",
+   "message": "使えます"
+  }
+ ]
+}

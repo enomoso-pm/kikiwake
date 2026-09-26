@@ -1,0 +1,71 @@
+//! ファイルの確認（画面2）。対応している形式か・長さ・映像の有無・所要時間の目安・前回の結果。
+use std::path::Path;
+
+use crate::engines;
+use crate::error::AppError;
+use crate::job::{default_out_dir, identify, load_speed, transcript_reusable, Engine, JobDir};
+use crate::types::{Estimate, FileInfo, Previous};
+
+/// 対応している形式
+pub const SUPPORTED: [&str; 5] = ["mp4", "mov", "m4a", "mp3", "wav"];
+
+/// 所要時間の目安（全段階の合計）。Apple M4 で録音の長さの 0.2〜0.4 倍（Phase 0）。
+/// この Mac で書き起こしたことがあれば、そのときの速さ（M4 の 68 分で 0.30 倍）との比で補正する
+pub fn estimate(engine: &Engine, duration: f64) -> Estimate {
+    let scale = load_speed(&engine.paths).map(|s| (s.transcribe_ratio / 0.30).clamp(0.5, 4.0)).unwrap_or(1.0);
+    Estimate { min_sec: (duration * 0.2 * scale).round() as u64, max_sec: (duration * 0.4 * scale).round() as u64 }
+}
+
+pub fn inspect_file(engine: &Engine, path: &Path) -> Result<FileInfo, AppError> {
+    let (id, src) = identify(path)?;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let mut fi = FileInfo {
+        path: src.path.clone(),
+        name,
+        size_bytes: src.size_bytes,
+        duration_sec: 0.0,
+        has_video: false,
+        supported: false,
+        unsupported: None,
+        estimate: Estimate { min_sec: 0, max_sec: 0 },
+        previous: None,
+    };
+    if !SUPPORTED.contains(&ext.as_str()) {
+        fi.unsupported = Some(AppError::unsupported_format());
+        return Ok(fi);
+    }
+    match engines::inspect(&engine.paths, Path::new(&src.path)) {
+        Ok(i) => {
+            fi.duration_sec = kikiwake_core::pycompat::round(i.duration_sec, 2);
+            fi.has_video = i.has_video;
+            if !i.has_audio {
+                fi.unsupported = Some(AppError::no_audio_track());
+                return Ok(fi);
+            }
+        }
+        Err(e) => {
+            fi.unsupported = Some(e);
+            return Ok(fi);
+        }
+    }
+    fi.supported = true;
+    fi.estimate = estimate(engine, fi.duration_sec);
+    if let Ok(job) = JobDir::open(&engine.paths, &id) {
+        if let Ok(old) = job.source() {
+            // 版6: 前回の書き起こしまでそろっていれば、書き起こしをやり直さずに数秒で名前付けへ進む（4.5 時間の録音で実測 1.2 秒）。
+            // 取り出した音声は使い終えたら消している（tidy.rs）ので、始めると元の録音から取り出し直す（68 分の録音で 1.2 秒）
+            let result_reusable = transcript_reusable(&engine.paths, &job);
+            if result_reusable {
+                fi.estimate = Estimate { min_sec: 1, max_sec: 10 };
+            }
+            fi.previous = Some(Previous {
+                out_dir: default_out_dir(Path::new(&src.path)).display().to_string(),
+                diarization_reusable: job.diarization().is_file(),
+                processed_at: old.processed_at,
+                result_reusable,
+            });
+        }
+    }
+    Ok(fi)
+}

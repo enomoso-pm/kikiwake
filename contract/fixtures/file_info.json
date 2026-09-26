@@ -1,0 +1,12 @@
+{
+ "path": "/Users/example/Movies/要件レビュー_合成.wav",
+ "name": "要件レビュー_合成.wav",
+ "sizeBytes": 5245302,
+ "durationSec": 163.91,
+ "hasVideo": false,
+ "supported": true,
+ "estimate": {
+  "minSec": 33,
+  "maxSec": 66
+ }
+}

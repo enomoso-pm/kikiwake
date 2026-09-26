@@ -1,0 +1,16 @@
+{
+ "path": "/Users/example/Movies/画面収録.mkv",
+ "name": "画面収録.mkv",
+ "sizeBytes": 120000000,
+ "durationSec": 0,
+ "hasVideo": true,
+ "supported": false,
+ "unsupported": {
+  "code": "unsupported_format",
+  "message": "この形式には対応していません。対応している形式: mp4・mov・m4a・mp3・wav"
+ },
+ "estimate": {
+  "minSec": 0,
+  "maxSec": 0
+ }
+}

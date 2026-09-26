@@ -1,0 +1,580 @@
+/* Kikiwake の見た目の基準（UI 画面仕様書 ver1.1 §3）。外から何も読み込まない */
+
+/*
+ * 日本語の文字だけヒラギノ角ゴシックで描く（2026-09-26 決定。仕様書 §3.2 の書体の指定の前に足した）。
+ * アプリの中（Safari と同じ WebKit）では -apple-system が日本語まで Mac の画面用の書体で描き、
+ * ブラウザ（Chrome 系）で確かめた見た目より約 8% 細身で行も低くなる（18px で幅 180→166px・高さ 27→21px）。
+ * 日本語の範囲だけ、この PC に入っているヒラギノ（local()。外から読み込まない）を先に当てる。英数字は今までどおり。
+ * ブラウザでは今までと同じ字形になる。ヒラギノが無い PC（Windows など）では、この名前は使われず次の指定に進む
+ */
+@font-face {
+  font-family: "Kikiwake JA";
+  src: local("HiraginoSans-W3"), local("Hiragino Sans W3");
+  font-weight: 100 500;
+  unicode-range: U+3000-303F, U+3040-30FF, U+31F0-31FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: "Kikiwake JA";
+  src: local("HiraginoSans-W6"), local("Hiragino Sans W6");
+  font-weight: 600 900;
+  unicode-range: U+3000-303F, U+3040-30FF, U+31F0-31FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FF00-FFEF;
+}
+
+:root {
+  --bg-app: #f7f7f4;
+  --bg-bar: #fbfbf9;
+  --bg-card: #ffffff;
+  --bg-track: #ebebe7;
+  --bg-muted: #efefeb;
+  --bg-chip: #e6e6e2;
+  --line: #e3e3de;
+  --line-soft: #efefeb;
+  --line-input: #cfd0cb;
+  --ink: #1d1f22;
+  --ink-2: #3d4046;
+  --ink-3: #5d6168;
+  --ink-4: #8a8e95;
+  --placeholder: #9a9ea4;
+  --accent: #3d6a96;
+  --accent-hover: #2c5078;
+  --accent-soft: #e8eef5;
+  --accent-soft-ink: #1f3c5a;
+  --accent-faint: #f5f8fb;
+  --accent-nav: #eef2f6;
+  --accent-hover2: #f0f3f7;
+  --focus: #e0e9f2;
+  --disabled: #b4bec9;
+  --ok-ink: #23603d;
+  --ok-bg: #e6f2ea;
+  --ok-bar: #5e9c76;
+  --warn-ink: #6e4700;
+  --warn-bg: #f7efdc;
+  --err-ink: #8f2a23;
+  --err-bg: #f8e7e5;
+  --err-bar: #c0675f;
+  --err-btn: #a8322a;
+  --err-btn-border: #d9b3ae;
+  --paused-bar: #a9adb3;
+  --wait-dot: #d3d4cf;
+  --unres-bg: #fbf7ee;
+  --unres-line: #e0d6bf;
+  --unres-row: #ece3cf;
+  --unres-hover: #f5ecd6;
+  --unres-dash: #b9a57a;
+  --hit: #f5dc8a;
+  --hit-row: #fbf3d9;
+  --flash: #f3e2b3;
+  --drop-hover: #f0f5fa;
+  --drop-line: #c5c7c2;
+  --toast: #2a2c30;
+  --scrim: rgba(20, 22, 25, 0.35);
+
+  --font: "Kikiwake JA", -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI",
+    "Meiryo", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-app);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--placeholder);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.pretty {
+  text-wrap: pretty;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 窓 ---------------------------------------------------------------- */
+
+.app {
+  position: relative;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ---- 工程バー（§2.2） ---------------------------------------------------- */
+
+.stepbar {
+  height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 0 32px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--line);
+}
+
+.step {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: default;
+  font: inherit;
+}
+
+.step.nav {
+  background: var(--accent-nav);
+  cursor: pointer;
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg-chip);
+  color: var(--ink-4);
+}
+
+.step-name {
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--ink-4);
+}
+
+.step.current .step-num {
+  background: var(--accent);
+  color: #fff;
+}
+
+.step.current .step-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.step.done .step-num {
+  background: #cfdbe7;
+  color: var(--accent-soft-ink);
+}
+
+.step.done .step-name {
+  color: var(--ink-2);
+}
+
+/* ---- ボタン（§2.4） ------------------------------------------------------ */
+
+.btn {
+  flex: none;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.btn:disabled {
+  cursor: default;
+}
+
+
+.btn-primary {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 22px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:disabled {
+  background: var(--disabled);
+}
+
+.btn-secondary {
+  font-size: 14px;
+  padding: 10px 18px;
+  border: 1px solid var(--line-input);
+  background: #fff;
+  color: var(--ink);
+}
+
+.btn-secondary.compact {
+  padding: 9px 18px;
+}
+
+.btn-secondary:disabled,
+.btn-mid:disabled,
+.btn-small:disabled {
+  color: var(--placeholder);
+}
+
+.btn-mid {
+  font-size: 13px;
+  padding: 7px 14px;
+  border: 1px solid var(--line-input);
+  background: #fff;
+  color: var(--ink);
+}
+
+.btn-small {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--line-input);
+  background: #fff;
+  color: var(--ink);
+}
+
+.btn-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  border-radius: 0;
+}
+
+.btn-link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.btn-copy {
+  flex: none;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--err-btn-border);
+  background: #fff;
+  color: var(--err-ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-danger {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border: none;
+  background: var(--err-btn);
+  color: #fff;
+}
+
+/* ---- 入力欄 ------------------------------------------------------------- */
+
+.input {
+  border: 1px solid var(--line-input);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+  font: inherit;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+/* ---- チェック付きの選択（§2.4） ------------------------------------------- */
+
+.check-chip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line-input);
+  background: #fff;
+  color: var(--ink-4);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.check-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+  color: var(--ink);
+}
+
+.check-box {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 3px;
+  border: 1.5px solid var(--paused-bar);
+  background: #fff;
+  color: #fff;
+  font-size: 10px;
+  line-height: 12px;
+  text-align: center;
+}
+
+.check-chip.on .check-box {
+  border: none;
+  background: var(--accent);
+}
+
+.dot {
+  flex: none;
+  display: inline-block;
+  border-radius: 50%;
+}
+
+/* ---- 棒グラフ ----------------------------------------------------------- */
+
+.track {
+  overflow: hidden;
+  background: var(--bg-track);
+}
+
+.track > .fill {
+  height: 100%;
+}
+
+@keyframes kk-indet {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.indet > .fill {
+  width: 40%;
+  background: var(--accent);
+  border-radius: 4px;
+  animation: kk-indet 1.4s ease-in-out infinite;
+}
+
+/* ---- 帯 ----------------------------------------------------------------- */
+
+.band-error {
+  background: var(--err-bg);
+  color: var(--err-ink);
+  border-radius: 8px;
+}
+
+.band-warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border-radius: 6px;
+}
+
+.band-info {
+  background: var(--accent-soft);
+  color: var(--accent-soft-ink);
+  border-radius: 8px;
+}
+
+/* ---- カード ------------------------------------------------------------- */
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+/* ---- ダイアログ・モーダル（§2.5・§8.8） ------------------------------------ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog {
+  width: 420px;
+  max-width: calc(100% - 80px);
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dialog-body {
+  font-size: 14px;
+  color: var(--ink-2);
+  line-height: 1.7;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.dialog-buttons .btn-secondary {
+  padding: 9px 16px;
+}
+
+/* ---- トースト（§2.6） ---------------------------------------------------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 60;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--toast);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---- 結果の画面（§8） ---------------------------------------------------- */
+
+.name-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.name-option.selected {
+  background: var(--accent-nav);
+}
+
+.name-option:hover {
+  background: var(--accent-hover2);
+}
+
+.unres-item {
+  text-align: left;
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 6px;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--unres-row);
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.unres-item:hover {
+  background: var(--unres-hover);
+}
+
+.talk-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.talk-row:hover {
+  background: var(--bg-muted);
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--bg-muted);
+}

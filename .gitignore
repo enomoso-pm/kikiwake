@@ -1,0 +1,16 @@
+# ビルド生成物
+/build/
+
+# 音声・モデル・計測結果はリポジトリに入れない（計測の出力は ~/Library/Caches/Kikiwake-dev/）
+*.wav
+*.m4a
+*.mp4
+*.mov
+*.mp3
+*.bin
+*.gguf
+# 例外: 画面の見本用のサンプル音声（合成会議＝架空の4人会議から切り出したもの）
+!contract/fixtures/samples/*.wav
+
+__pycache__/
+.DS_Store

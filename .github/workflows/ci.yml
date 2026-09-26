@@ -1,0 +1,34 @@
+# 変更のたびに、中核のロジック・処理の流れ・画面のテストを回す（エンジンとアプリのビルドはしない）
+name: テスト
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: 中核のロジック（core）
+        run: cargo test --release --locked
+        working-directory: core
+      - name: 処理の流れ（src-tauri/engine）
+        run: cargo test --release --locked -p kikiwake-engine
+        working-directory: src-tauri
+      - name: 画面（ui）
+        working-directory: ui
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build

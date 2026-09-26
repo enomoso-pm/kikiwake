@@ -1,0 +1,39 @@
+{
+ "os": "macos",
+ "osVersion": "26.2",
+ "cpu": "Apple M4",
+ "memoryGB": 16,
+ "freeDiskGB": 185.3,
+ "gpu": {
+  "kind": "metal",
+  "name": "Apple M4 GPU（10コア）"
+ },
+ "canRun": true,
+ "checks": [
+  {
+   "id": "os",
+   "level": "ok",
+   "message": "対応しています"
+  },
+  {
+   "id": "cpu",
+   "level": "ok",
+   "message": "対応しています"
+  },
+  {
+   "id": "memory",
+   "level": "ok",
+   "message": "足りています"
+  },
+  {
+   "id": "disk",
+   "level": "ok",
+   "message": "モデルと作業用に足りています"
+  },
+  {
+   "id": "gpu",
+   "level": "ok",
+   "message": "使えます"
+  }
+ ]
+}

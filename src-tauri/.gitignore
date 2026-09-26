@@ -1,0 +1,4 @@
+# ビルドの出力（scripts/build_engines_mac.sh が作る同梱用のエンジン・cargo・Tauri の生成物）
+/binaries/
+/target/
+/gen/

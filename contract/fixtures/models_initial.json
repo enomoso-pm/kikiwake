@@ -1,0 +1,16 @@
+[
+ {
+  "id": "whisper-large-v3",
+  "label": "書き起こし",
+  "sizeBytes": 3095033483,
+  "state": "missing",
+  "downloadedBytes": 0
+ },
+ {
+  "id": "nemotron-3-diarization",
+  "label": "話者の判定",
+  "sizeBytes": 107012128,
+  "state": "missing",
+  "downloadedBytes": 0
+ }
+]

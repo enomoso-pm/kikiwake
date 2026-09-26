@@ -1,0 +1,300 @@
+[
+ {
+  "atSec": 0,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 0,
+   "reusedDiarization": false,
+   "stage": "extract",
+   "stagePercent": null,
+   "etaSec": null
+  }
+ },
+ {
+  "atSec": 1,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 1,
+   "reusedDiarization": false,
+   "stage": "diarize",
+   "stagePercent": null,
+   "etaSec": null
+  }
+ },
+ {
+  "atSec": 22,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 22,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 0,
+   "etaSec": null
+  }
+ },
+ {
+  "atSec": 84,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 84,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 5,
+   "etaSec": 1181
+  }
+ },
+ {
+  "atSec": 146,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 146,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 10,
+   "etaSec": 1119
+  }
+ },
+ {
+  "atSec": 208,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 208,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 15,
+   "etaSec": 1057
+  }
+ },
+ {
+  "atSec": 270,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 270,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 20,
+   "etaSec": 995
+  }
+ },
+ {
+  "atSec": 332,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 332,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 25,
+   "etaSec": 933
+  }
+ },
+ {
+  "atSec": 394,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 394,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 30,
+   "etaSec": 871
+  }
+ },
+ {
+  "atSec": 456,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 456,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 35,
+   "etaSec": 809
+  }
+ },
+ {
+  "atSec": 518,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 518,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 40,
+   "etaSec": 747
+  }
+ },
+ {
+  "atSec": 580,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 580,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 45,
+   "etaSec": 685
+  }
+ },
+ {
+  "atSec": 642,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 642,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 50,
+   "etaSec": 623
+  }
+ },
+ {
+  "atSec": 704,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 704,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 55,
+   "etaSec": 561
+  }
+ },
+ {
+  "atSec": 766,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 766,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 60,
+   "etaSec": 499
+  }
+ },
+ {
+  "atSec": 828,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 828,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 65,
+   "etaSec": 437
+  }
+ },
+ {
+  "atSec": 890,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 890,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 70,
+   "etaSec": 375
+  }
+ },
+ {
+  "atSec": 952,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 952,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 75,
+   "etaSec": 313
+  }
+ },
+ {
+  "atSec": 1014,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 1014,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 80,
+   "etaSec": 251
+  }
+ },
+ {
+  "atSec": 1076,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 1076,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 85,
+   "etaSec": 189
+  }
+ },
+ {
+  "atSec": 1138,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 1138,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 90,
+   "etaSec": 127
+  }
+ },
+ {
+  "atSec": 1200,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 1200,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 95,
+   "etaSec": 65
+  }
+ },
+ {
+  "atSec": 1262,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 1262,
+   "reusedDiarization": false,
+   "stage": "transcribe",
+   "stagePercent": 100,
+   "etaSec": 3
+  }
+ },
+ {
+  "atSec": 1263,
+  "event": "progress",
+  "data": {
+   "jobId": "job-example",
+   "elapsedSec": 1263,
+   "reusedDiarization": false,
+   "stage": "merge",
+   "stagePercent": null,
+   "etaSec": 3
+  }
+ },
+ {
+  "atSec": 1266,
+  "event": "done",
+  "data": {
+   "jobId": "job-example",
+   "outDir": "/Users/example/Movies/定例会議_0925_文字起こし",
+   "speakers": 4,
+   "unresolvedCount": 26
+  }
+ }
+]

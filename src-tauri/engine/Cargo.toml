@@ -1,0 +1,21 @@
+[package]
+name = "kikiwake-engine"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Kikiwake の処理の流れ（エンジンの呼び出し・作業フォルダ・モデルの取得・保存）。画面（Tauri）には頼らない"
+
+# 画面なしで動かすコマンド（処理の流れの確かめ用。アプリには入らない）
+[[bin]]
+name = "kikiwake-headless"
+path = "src/bin/kikiwake-headless.rs"
+
+[dependencies]
+kikiwake-core = { path = "../../core" }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+indexmap = { version = "2", features = ["serde"] }
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+sha2 = "0.10"
+ureq = "2"
