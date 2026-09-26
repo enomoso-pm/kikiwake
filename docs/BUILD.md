@@ -15,10 +15,11 @@ Apple シリコンの Mac で作ります（Intel の Mac と Windows は、ま�
 ## 作る
 
 ```bash
-git clone --recursive https://github.com/enomoso-pm/kikiwake.git
+git clone https://github.com/enomoso-pm/kikiwake.git
 cd kikiwake
 
-# 1. エンジン（whisper-cli・kikiwake-diar・decode-avf）。静的にリンクした 1 本ずつ・M1 基準・macOS 14 以降
+# 1. エンジン（whisper-cli・kikiwake-diar・decode-avf）。静的にリンクした 1 本ずつ・M1 基準・macOS 14 以降。
+#    要る部品（third_party の 2 つと、その中の ggml・sentencepiece）はこのスクリプトが取ってくる
 bash scripts/build_engines_mac.sh
 
 # 2. 画面の部品と、Tauri の道具（Mac 全体には入れず build/tools に置く）
@@ -32,6 +33,7 @@ bash scripts/build_app_mac.sh
 - 作った Mac のフォルダの場所（ユーザー名入り）が実行ファイルに残らないよう、エンジンは `-ffile-prefix-map`、アプリは `--remap-path-prefix` で
   ソースの場所を置き換えて作り、`build_app_mac.sh` の最後に残っていないかを確かめる
 
+- `git clone --recursive` は使わない（NeMo-Speech.cpp が持つ、話者判定に要らない部品と大容量ファイル置き場のデータまで落ちてくる）
 - エンジンの確かめ（依存が OS 標準だけ・動く macOS の下限・M1 に無い命令が無いか）は `scripts/check_engines_mac.sh`（`build_engines_mac.sh` の最後に自動で走る）
 - AI モデルは、アプリが初回に取得する（リポジトリには入れない）
 
