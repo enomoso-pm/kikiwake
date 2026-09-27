@@ -5,9 +5,25 @@
   対応する言語を日本語と英語と宣言し、macOS が用意する部品（macOS が足すメニューの項目・文字の右クリックのメニュー・
   「Kikiwake について」の枠など）を Mac の言語に合わせる（2026-09-27 決定）。宣言が無いと、日本語の Mac でもそれらが英語になる。
   ほかの言語の Mac では開発地域（英語）。画面の言語は別に、画面が決める（ui/src/i18n）
+
+  〜UsageDescription は、macOS が「書類」「デスクトップ」「ダウンロード」フォルダ・外付けのドライブ・ネットワークの共有フォルダ・
+  Google ドライブなど（File Provider）のファイルに触ってよいかを利用者に尋ねるときに出す説明（2026-09-27）。日本語は l10n/ja.lproj/InfoPlist.strings。
+  この許可は署名に結びつく（簡易署名だと、作り直した版では消えて、また尋ねられる）
 -->
 <plist version="1.0">
 <dict>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Kikiwake reads recordings in your Documents folder and saves transcripts next to them. Your recordings and transcripts stay on your Mac.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Kikiwake reads recordings on your Desktop and saves transcripts next to them. Your recordings and transcripts stay on your Mac.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Kikiwake reads recordings in your Downloads folder and saves transcripts next to them. Your recordings and transcripts stay on your Mac.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Kikiwake reads recordings on external drives and saves transcripts next to them. Your recordings and transcripts stay on your Mac.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>Kikiwake reads recordings on network shares and saves transcripts next to them. Your recordings and transcripts are not sent anywhere else.</string>
+	<key>NSFileProviderDomainUsageDescription</key>
+	<string>Kikiwake reads recordings in cloud storage folders such as Google Drive and saves transcripts next to them. Kikiwake itself doesn't send your recordings or transcripts anywhere.</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>

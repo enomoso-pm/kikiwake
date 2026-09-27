@@ -1,10 +1,14 @@
 // 操作役（開発用のビルドだけ。src-tauri/src/dev.rs が画面の読み込みの初めに入れる。ui/ のファイルは触らない）。
 // 画面（製品と同じビルド）のボタンを文言で探して押し、入力し、画面の文と件数を読む。筋書きは scripts/e2e_mac.sh が作る JSON。
-//   setup  準備の画面: 足りないモデルを取る（途中で中断して続きから）→ ファイルの画面へ
-//   synth  合成会議で5画面: ドロップ → 処理中の閉じる確認・中止とやり直し → 名前付け（サンプルの再生・名前）→
-//          結果（行の再生・保存・見本と比べる・手直し・上書きの確認・画面を通さずに保存したものと比べる）→ 別の録音へ → 同じ録音を選び直す
+// 画面は録音が主役の形（左に録音の一覧・右に選んだ録音。2026-09-27 に製品の画面にした）。
+//   setup  準備の画面だけ（一覧は出さない）: 足りないモデルを取る（途中で中断して続きから）→「はじめる」で新しい録音の画面・一覧 →「AI モデルと動作条件」で見返す
+//   synth  合成会議で通す: ドロップ → 処理中の閉じる確かめ（段階の文）・中止と再開 → 処理中に2本目を順番待ち（閉じる確かめに順番待ちの一文）→
+//          1本目が終わると2本目がすぐ始まる（見ていない処理中の録音でも閉じる確かめ）→ 話者のタブ（サンプルの再生・名前・保存の帯から保存）→
+//          文字起こしのタブ（行の再生・「詳細」・手直し・上書きの確かめ・見本や画面を通さずに保存したものと比べる）→ 処理中にほかの録音を開き直す
+//          （処理は最後まで進む）→ 見ていない間に終わった録音の「●」→ 同じ録音を選び直す → ドラッグ中の案内・窓の幅・はみ出し
+//   photo  説明書の写真（新しい録音でファイルを選んだ・話者のタブ・文字起こしのタブ）
 //   real   実録音（quiet: 中身は出さず、時間と件数だけ）
-//   history1・history2  履歴と閉じたときの状態（約束 版8）。scripts/e2e_mac.sh が同じ作業フォルダで2回起動する
+//   history1・history2  履歴と閉じたときの状態（約束 版8・版9）。scripts/e2e_mac.sh が同じ作業フォルダで2回起動する
 //   en     英語（約束 版7）: 英語の Mac のまねで起動 → メニュー・画面・保存が英語、既定の保存先が「_transcript」→ 日本語に切り替えるとメニューと保存も日本語に。
 //          英語がはみ出さないか（1200×800・900×560）
 (() => {
@@ -40,20 +44,125 @@
     }
   }
 
+  async function waitForAsync(fn, ms = 5000, step = 200) {
+    const t0 = Date.now();
+    for (;;) {
+      let v = null;
+      try {
+        v = await fn();
+      } catch {
+        v = null;
+      }
+      if (v) return v;
+      if (Date.now() - t0 > ms) return null;
+      await sleep(step);
+    }
+  }
+
   const norm = (s) => (s || "").replace(/\s+/g, " ").trim();
   const buttons = () => [...document.querySelectorAll("button")];
   const button = (label) => buttons().find((b) => norm(b.textContent) === label);
   const buttonHas = (part) => buttons().find((b) => norm(b.textContent).includes(part));
-  const heading = () => norm(document.querySelector("h1")?.textContent);
+  const heading = () => norm(document.querySelector("main h1")?.textContent);
   const bodyText = () => document.body.innerText;
   const dialogTitle = () => norm(document.querySelector(".dialog-title")?.textContent);
+  const dialogBody = () => [...document.querySelectorAll(".dialog-body p")].map((p) => norm(p.textContent));
   const row = (id) => document.querySelector(`[data-row-id="${id}"]`);
-  /** 工程バーの並びと状態（「1ファイル:current」など。状態が無ければ「まだ」） */
-  const stepStates = () =>
-    [...document.querySelectorAll(".stepbar .step")].map((b) => {
-      const st = ["current", "done"].find((c) => b.classList.contains(c)) || "まだ";
-      return `${norm(b.textContent).replace(/\s+/g, "")}:${st}`;
-    });
+  const toast = () => norm(document.querySelector(".toast")?.textContent);
+  /** 処理中の画面の段階（「声を文字にする」など） */
+  const stageText = () => norm(document.querySelector(".page-scroll .card span")?.textContent);
+
+  // ---- 録音が主役の画面の部品 ----------------------------------------------------------------
+
+  const entryEls = () => [...document.querySelectorAll("[data-entry]")];
+  const entryName = (el) => norm(el?.querySelector(".objects-item-name")?.textContent);
+  const entryOf = (name) => entryEls().find((el) => entryName(el) === name);
+  const entryText = (el) => norm(el?.innerText);
+  const chipOf = (el) => norm(el?.querySelector(".objects-chip")?.textContent);
+  const freshOf = (el) => Boolean(el?.querySelector(".objects-fresh"));
+  const runningEntry = () => document.querySelector('[data-entry="run"]');
+  const queued = () => entryEls().filter((el) => (el.getAttribute("data-entry") || "").startsWith("q:"));
+  /** 右の一番上の帯: 録音の名前と状態の印 */
+  const title = () => norm(document.querySelector(".objects-title")?.textContent);
+  const headChip = () => norm(document.querySelector(".objects-toolbar .objects-chip")?.textContent);
+  /** 「話者」「文字起こし」のどちらのタブか */
+  const tab = () => norm(document.querySelector(".objects-tab.current")?.textContent);
+
+  /** 画面の言葉（筋書きの言語ごと） */
+  const JA = {
+    newTitle: "新しい録音",
+    start: "文字起こしをはじめる",
+    enqueue: "順番待ちに入れる",
+    speakers: "話者",
+    transcript: "文字起こし",
+    stopped: "中断しました",
+    save: "保存",
+  };
+  const EN = {
+    newTitle: "New recording",
+    start: "Start transcription",
+    enqueue: "Add to queue",
+    speakers: "Speakers",
+    transcript: "Transcript",
+    stopped: "Stopped",
+    save: "Save",
+  };
+
+  /** 処理中に閉じるときの確かめの文（2026-09-27 決定。ui/src/i18n/ja.ts の dialog.closeBody と同じ） */
+  const CLOSE_TITLE = "文字起こし中です。閉じますか？";
+  const CLOSE = {
+    beforeSeparation: (name) => `閉じると「${name}」の文字起こしを中断し、ここまでの途中の分は破棄します。再開すると最初からはじめます。`,
+    converting: (name) =>
+      `閉じると「${name}」の文字起こしを中断します。声の聞き分けの結果は残りますが、声を文字にしている途中の分は破棄し、再開すると声を文字にするところからやり直します（90 分を超える録音は、約1時間ごとの区切りで書き終えた分は残ります）。`,
+    finishing: (name) => `閉じると「${name}」の文字起こしを中断します。声の聞き分けと文字にした結果は残り、再開するとすぐに終わります。`,
+    queue: (n) => `順番待ちの ${n} 件は破棄します。まだはじめていないので、元のファイルも文字起こしも失いません。`,
+  };
+  const closeCaseOf = (body0, name) => Object.keys(CLOSE).find((k) => k !== "queue" && CLOSE[k](name) === body0) ?? "（知らない文）";
+
+  /** 一覧を出す（狭い窓では、左上のボタンで重ねて出す） */
+  async function showList() {
+    if (document.querySelector(".objects-sidebar")) return true;
+    document.querySelector(".objects-toolbar .objects-icon-btn")?.click();
+    return Boolean(await waitFor(() => document.querySelector(".objects-sidebar"), 2000));
+  }
+  const hideOverlay = () => document.querySelector(".objects-scrim")?.click();
+
+  /** 一覧の行を押す（書き終えた録音なら、開いて「話者」か「文字起こし」のタブになるまで待つ） */
+  async function openEntry(name, { wait = true } = {}) {
+    await showList();
+    const el = entryOf(name);
+    if (!el) throw new Error(`一覧に「${name}」が無い（${entryEls().map(entryName).join(" / ")}）`);
+    el.click();
+    hideOverlay();
+    if (wait && !(await waitFor(() => title() === name && tab() && !document.querySelector(".objects-tab[disabled]"), 15000))) {
+      throw new Error(`「${name}」が開かない（今は「${title()}」「${tab()}」）`);
+    }
+  }
+
+  /** 「＋ 新しい録音」 */
+  async function newRecording(L) {
+    await showList();
+    document.querySelector(".objects-new")?.click();
+    hideOverlay();
+    await screen(L.newTitle, 5000);
+  }
+
+  /** 「話者」「文字起こし」のタブを押して、切り替わるまで待つ（文字起こしのタブは名前を確定してから開く） */
+  async function toTab(name, ms = 20000) {
+    const b = [...document.querySelectorAll(".objects-tab")].find((x) => norm(x.textContent) === name);
+    if (!b) throw new Error(`タブ「${name}」が無い`);
+    if (tab() !== name) b.click();
+    const ok = await waitFor(() => tab() === name && !document.querySelector(".objects-tab[disabled]") && (name !== JA.transcript && name !== EN.transcript ? true : document.querySelector("[data-row-id]")), ms);
+    if (!ok) throw new Error(`「${name}」のタブにならない（今は「${tab()}」）`);
+  }
+
+  /** 録音の上の段の「…」のメニューの項目 */
+  async function moreMenu() {
+    document.querySelector('.objects-head .objects-icon-btn[aria-haspopup="menu"]')?.click();
+    const menu = await waitFor(() => document.querySelector(".objects-menu"), 2000);
+    return menu ? [...menu.querySelectorAll("button")] : [];
+  }
+  const escape = () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
 
   /** React の入力欄に値を入れる（見た目の値ではなく、React が読む値を変える） */
   function setValue(el, value) {
@@ -69,14 +178,14 @@
       const x = button(label);
       return x && !x.disabled ? x : null;
     }, ms);
-    if (!b) throw new Error(`ボタン「${label}」が出ない（画面は「${heading()}」）`);
+    if (!b) throw new Error(`ボタン「${label}」が出ない（画面は「${heading() || tab()}」）`);
     b.click();
     return b;
   }
 
-  async function screen(title, ms = 10000) {
-    const ok = await waitFor(() => heading() === title, ms, 200);
-    if (!ok) throw new Error(`「${title}」の画面にならない（今は「${heading()}」）`);
+  async function screen(h1, ms = 10000) {
+    const ok = await waitFor(() => heading() === h1, ms, 200);
+    if (!ok) throw new Error(`「${h1}」の画面にならない（今は「${heading() || tab()}」）`);
   }
 
   /** 押して鳴らし、音声が読み込まれて進んだかを見る（init.js の記録） */
@@ -111,24 +220,6 @@
     info(`見た目の記録 ${name}（${s.items.length} 要素・${s.viewport.w}×${s.viewport.h}${png}）`);
   }
 
-  /**
-   * 結果の画面の右上の「完了」→ 完了の画面（工程の外。2026-09-26 決定）。題・帯・工程バー（4つとも「済んだ」）を確かめる。
-   * expect: "saved"（保存した）/"unsaved"（まだ保存していない）/"edits"（保存していない手直しがある）
-   */
-  async function finishCheck(expect, label) {
-    await clickWhen("完了");
-    await screen(expect === "saved" ? "文字起こしを保存しました" : "文字起こしを終えました", 5000);
-    const band = norm(document.querySelector(".band-warn span, .band-info span")?.textContent);
-    const wantBand = { saved: "", unsaved: "まだ保存していません", edits: "ファイルに保存していない手直しがあります" }[expect];
-    const steps = stepStates().join(" ");
-    check(
-      `完了の画面（${label}）`,
-      band === wantBand && steps === "1ファイル:done 2処理:done 3名前付け:done 4結果:done",
-      `帯「${band || "なし"}」・工程 ${steps}`,
-    );
-    return true;
-  }
-
   /** 保存した .md の見出しのうち、録音ごと・日ごとに変わる所（題・元ファイル・処理日）をそろえる */
   const normalizeMd = (md) =>
     md
@@ -159,16 +250,96 @@
 
   // エンジンからの知らせを操作役も受ける（jobId と保存先を知るため）
   let lastDone = null;
-  let doneAt = 0;
+  const doneIds = [];
+
+  /** 新しい版の知らせ（約束 版10）: 新しい録音の画面の帯 → 内容と手順の窓 →「あとで」（帯は残る）。skip なら「この版は知らせない」 */
+  async function updateCheck(skip) {
+    const band = await waitFor(() => document.querySelector("[data-update-band]"), 10000);
+    check("新しい版があると、新しい録音の画面に帯（約束 版10）", band && norm(band.textContent).includes("新しい版（9.9.9）があります"), norm(band?.textContent).slice(0, 80));
+    if (!band) return;
+    if (skip) {
+      await clickWhen("この版は知らせない");
+      check("「この版は知らせない」で帯が消える", await waitFor(() => !document.querySelector("[data-update-band]"), 2000));
+      return;
+    }
+    await clickWhen("内容と手順を見る");
+    const dlg = await waitFor(() => document.querySelector("[data-update-dialog]"), 3000);
+    const text = norm(dlg?.textContent);
+    const steps = dlg ? dlg.querySelectorAll("ol li").length : 0;
+    check(
+      "窓に題・更新内容・入れ替えかた（6つの手順と「このまま開く」）",
+      text.includes("Kikiwake 9.9.9 があります") && text.includes("（操作役）新しい版の知らせの確かめ") && steps === 6 && text.includes("このまま開く"),
+      `手順 ${steps} 個`,
+    );
+    await snap(sc, "update");
+    await clickWhen("あとで");
+    check("「あとで」で窓を閉じ、帯は残る", !document.querySelector("[data-update-dialog]") && document.querySelector("[data-update-band]"));
+  }
+
+  /** 処理中に閉じようとする → 確かめる窓の文を見る →「文字起こしを続ける」で続ける */
+  async function closeCheck(label, want) {
+    await invoke("dev_close");
+    const d = await waitFor(() => dialogTitle() === CLOSE_TITLE, 5000);
+    const body = dialogBody();
+    check(`処理中に閉じると確かめる（${label}）`, d && want(body), body.join(" ／ ").slice(0, 240));
+    if (d) await clickWhen("文字起こしを続ける");
+    await sleep(300);
+    check(`「文字起こしを続ける」で続く（${label}）`, !dialogTitle() && runningEntry());
+    return body;
+  }
+
+  /** ファイルを窓に落として、ファイルの確認が済むまで待つ（label は始めるボタン。処理中なら「順番待ちに入れる」） */
+  async function chooseFile(path, L, label = L.start) {
+    await invoke("dev_drop", { paths: [path] });
+    const name = path.split("/").pop();
+    const b = await waitFor(() => {
+      const x = button(label);
+      return x && bodyText().includes(name) ? x : null;
+    }, 20000);
+    check(`ドロップでファイルの確認（${name}）`, b, b ? "" : norm(bodyText()).slice(0, 120));
+    if (!b) throw new Error(`「${label}」が出ない`);
+    return b;
+  }
+
+  /** 見ている録音の処理が終わって「話者」のタブになるまで待つ（止まったら例外） */
+  async function waitNaming(sc, L) {
+    const t0 = Date.now();
+    let lastPct = "";
+    const pcts = new Set();
+    const ok = await waitFor(
+      () => {
+        const p = norm(document.querySelector(".page-scroll .card .num")?.textContent);
+        if (p && p !== lastPct) {
+          lastPct = p;
+          pcts.add(p);
+        }
+        return (tab() === L.speakers && document.querySelector('[id^="name-"]')) || heading() === L.stopped;
+      },
+      (sc.timeoutMin || 20) * 60000,
+      500,
+    );
+    if (heading() === L.stopped) throw new Error(`処理が止まった: ${norm(document.querySelector('[role="alert"]')?.textContent)}`);
+    if (!ok) throw new Error("処理が終わらない");
+    return { sec: (Date.now() - t0) / 1000, pcts: pcts.size };
+  }
+
+  /** 保存の帯の「保存」→ 保存した か 同じ名前のファイルの確かめ */
+  async function saveAndWait(L = JA) {
+    const before = norm(bodyText().match(/保存しました（\d+件）|Saved \(\d+ files?\)/)?.[0]);
+    await clickWhen(L.save);
+    return waitFor(() => {
+      if (dialogTitle() === "同じ名前のファイルがあります") return "dialog";
+      const now = norm(bodyText().match(/保存しました（\d+件）|Saved \(\d+ files?\)/)?.[0]);
+      return now && (now !== before || !document.querySelector(".objects-tab[disabled]")) && !button("保存中…") ? "saved" : null;
+    }, 15000);
+  }
 
   // ---- 準備の画面 ------------------------------------------------------------------------
 
   async function setupScenario() {
     await screen("はじめに準備をします", 20000);
-    check("起動して準備の画面", true);
-    // 準備は工程に入れない（2026-09-26）。準備の画面では工程バーの4つとも「まだ」
-    const before = stepStates().join(" ");
-    check("準備の画面では工程バーの4つとも「まだ」", before === "1ファイル:まだ 2処理:まだ 3名前付け:まだ 4結果:まだ", before);
+    // AI モデルがそろうまでは、一覧・上の帯・タブを出さず、準備の画面だけ（2026-09-27 決定）
+    check("起動して準備の画面だけ（一覧・タブは出さない）", !document.querySelector(".objects-sidebar") && !document.querySelector(".objects-tab"));
     await snap(sc, "setup");
     const ng = (bodyText().match(/不可/g) || []).length;
     check("動作条件に「不可」が無い", !bodyText().includes("動作条件を満たしていない項目がある"), `「不可」の文字 ${ng} か所`);
@@ -185,13 +356,24 @@
     const ready = await waitFor(() => (bodyText().match(/ダウンロード済み/g) || []).length >= 2, 15 * 60000, 500);
     check("続きから取り終えて、2つとも「ダウンロード済み」", ready, `${fmt((Date.now() - t0) / 1000)} 秒`);
     await snap(sc, "setup-ready");
-    await clickWhen("次へ");
-    await screen("録音を選ぶ");
-    const after = stepStates().join(" ");
-    check("「次へ」でファイルの画面・工程は「1 ファイル」から", after.startsWith("1ファイル:current 2処理:まだ"), after);
+    await clickWhen("はじめる");
+    await screen("新しい録音");
+    check("「はじめる」で新しい録音の画面・録音の一覧が出る（まだ空）", document.querySelector(".objects-sidebar") && bodyText().includes("まだありません"));
+    // そろったあとは「AI モデルと動作条件」で見返す（題が違い、「はじめる」は無く「もう一度確かめる」）
+    document.querySelector(".objects-foot-btn")?.click();
+    await screen("AI モデルと動作条件", 5000);
+    check("「AI モデルと動作条件」で見返す（一覧は出したまま・「はじめる」なし・「もう一度確かめる」あり）", document.querySelector(".objects-sidebar") && !button("はじめる") && button("もう一度確かめる"));
+    // 新しい版の確認の設定（約束 版10。2026-09-27 決定: 置く・初めは確かめる）
+    const setting = document.querySelector("[data-update-setting]");
+    check("「起動したときに新しい版を確かめる」があり、初めは入っている", setting && setting.getAttribute("aria-pressed") === "true", norm(setting?.textContent));
+    setting?.click();
+    check("外すと覚える", await waitFor(() => setting.getAttribute("aria-pressed") === "false" && localStorage.getItem("kikiwake.update.check") === "off", 2000));
+    setting?.click();
+    check("入れ直すと覚えた「外す」を消す", await waitFor(() => setting.getAttribute("aria-pressed") === "true" && localStorage.getItem("kikiwake.update.check") === null, 2000));
+    await snap(sc, "settings");
   }
 
-  // ---- 5画面を通す -------------------------------------------------------------------------
+  // ---- 合成会議で通す ----------------------------------------------------------------------
 
   /** 版6: ドラッグの位置が枠の中のときだけ、枠の色が変わる（外枠がドラッグで出すのと同じ知らせを dev_drag で送る） */
   async function dragCheck() {
@@ -209,67 +391,15 @@
     await invoke("dev_drag", { over: false, x: 0, y: 0 });
     const left = await waitFor(() => color() !== accent, 2000);
     check("ドラッグが枠の上にある間だけ枠の色が変わる（版6）", inside && outside && again && left, `枠の中 ${Boolean(inside)}・外 ${Boolean(outside)}・端 ${Boolean(again)}・出た ${Boolean(left)}`);
+    // 新しい録音の画面では、窓全体の案内は出さない（ドロップ枠の色で知らせる）
+    check("新しい録音の画面では窓全体の案内を出さない", !document.querySelector(".objects-drop"));
   }
 
-  async function chooseFile(sc) {
-    await invoke("dev_drop", { paths: [sc.recording] });
-    const start = await waitFor(() => button("文字起こしを始める"), 20000);
-    const name = sc.recording.split("/").pop();
-    check("ドロップでファイルの確認", start && bodyText().includes(name), start ? "" : norm(bodyText()).slice(0, 120));
-    return start;
-  }
-
-  async function processing(sc) {
-    await screen("文字起こし中", 5000);
-    if (sc.name === "synth") {
-      // 処理中に閉じる → 確かめる →「処理を続ける」
-      await sleep(1500);
-      await invoke("dev_close");
-      const d = await waitFor(() => dialogTitle() === "処理中です。閉じますか？", 5000);
-      check("処理中に閉じようとすると確かめる", d);
-      if (d) {
-        await clickWhen("処理を続ける");
-        await sleep(500);
-        check("「処理を続ける」で処理が続く", !dialogTitle() && heading() === "文字起こし中");
-      }
-      // 書き起こしに入ったら中止 → やり直す（話者の判定を使い回す）
-      const tr = await waitFor(() => norm(document.querySelector(".page-scroll .card span")?.textContent) === "書き起こし", 180000, 200);
-      check("書き起こしの段階に進む", tr);
-      await sleep(2000);
-      await clickWhen("中止");
-      await waitFor(() => dialogTitle() === "処理を中止しますか？", 5000);
-      await clickWhen("中止する");
-      await screen("中止しました", 20000);
-      check("中止すると話者の判定の結果が残る", bodyText().includes("話者の判定の結果は残っています"));
-      await clickWhen("やり直す");
-      await screen("文字起こし中", 5000);
-      check("やり直すと前回の話者判定を使う", await waitFor(() => bodyText().includes("前回の結果を使用"), 10000));
-    }
-    const t0 = Date.now();
-    let lastPct = "";
-    const pcts = new Set();
-    const ok = await waitFor(
-      () => {
-        const p = norm(document.querySelector(".page-scroll .card .num")?.textContent);
-        if (p && p !== lastPct) {
-          lastPct = p;
-          pcts.add(p);
-        }
-        return heading() === "話者に名前を付ける" || heading() === "途中で止まりました";
-      },
-      (sc.timeoutMin || 20) * 60000,
-      500,
-    );
-    if (heading() === "途中で止まりました") throw new Error(`処理が止まった: ${norm(document.querySelector('[role="alert"]')?.textContent)}`);
-    if (!ok) throw new Error("処理が終わらない");
-    check("処理が終わって名前付けの画面", true, `${fmt((Date.now() - t0) / 1000)} 秒・書き起こしの％の表示 ${pcts.size} 通り`);
-  }
-
-  async function namingScreen(sc) {
-    await snap(sc, "naming");
+  /** 話者のタブ: 話者の数・確認用の手がかり・サンプルの再生・名前を入れる */
+  async function namingChecks(sc) {
     const labels = [...new Set(buttons().map((b) => norm(b.textContent).match(/^(話者[A-Z]+)/)?.[1]).filter(Boolean))];
-    check("話者カードの数", !sc.expectSpeakers || labels.length === sc.expectSpeakers, `${labels.length} 人（エンジンは ${lastDone?.speakers}）`);
-    if (sc.expectHints) check("確認用の名前の手がかりの枠", bodyText().includes("話者を決められなかった部分の名前の手がかり"));
+    check("話者の数", !sc.expectSpeakers || labels.length === sc.expectSpeakers, `${labels.length} 人（エンジンは ${lastDone?.speakers}）`);
+    if (sc.expectHints) check("確認用の名前の手がかりの枠", bodyText().includes("確認用の部分で名乗った名前"));
     const play = buttonHas("▶ 再生");
     if (check("サンプルの再生ボタン", play)) {
       await checkPlay("サンプル", play, sc.quiet);
@@ -277,15 +407,7 @@
       if (stop) stop.click();
     }
     for (const [label, name] of Object.entries(sc.names || {})) {
-      const item = buttons().find((b) => norm(b.textContent).startsWith(label));
-      if (!item) {
-        check(`${label} を選ぶ`, false);
-        continue;
-      }
-      item.click();
-      const input = await waitFor(() => document.getElementById(`name-${label}`), 3000);
-      if (!check(`${label} の名前の欄`, input)) continue;
-      setValue(input, name);
+      if (!check(`${label} の名前の欄`, await typeName(label, name))) continue;
     }
     if (sc.names) {
       await sleep(200);
@@ -294,58 +416,133 @@
     }
   }
 
-  async function resultScreen(sc) {
-    await clickWhen("文字起こしを見る →");
-    await screen("文字起こし", 20000);
-    const jobId = lastDone.jobId;
-    const view = await invoke("get_transcript", { jobId, named: Boolean(sc.names) });
-    const lines = view.utterances.length + view.unresolved.length;
-    check("結果の画面の行数がエンジンと同じ", bodyText().includes(`${lines.toLocaleString()}行`), `${lines} 行（本文 ${view.utterances.length}・確認用 ${view.unresolved.length}）`);
+  /** 文字起こしのタブ: 最初の行がエンジンと同じ・行の再生 */
+  async function transcriptChecks(sc, jobId, named) {
+    const view = await invoke("get_transcript", { jobId, named });
     const first = view.utterances[0];
     const r0 = await waitFor(() => row(first.id), 5000);
     check("最初の行の文字がエンジンと同じ", r0 && norm(r0.textContent).includes(norm(first.text).slice(0, 12)));
-    await snap(sc, "result");
     const playRow = r0?.querySelector("button");
     if (check("行の再生ボタン", playRow)) {
       await checkPlay("行", playRow, sc.quiet);
       if (norm(playRow.textContent) === "■") playRow.click();
     }
-    return { jobId, view };
+    return view;
   }
 
-  async function saveAndWait(expectCount) {
-    await clickWhen("保存");
-    const r = await waitFor(() => (dialogTitle() === "同じ名前のファイルがあります" ? "dialog" : bodyText().includes("保存しました") ? "saved" : null), 15000);
-    return r;
+  /** 「詳細」の窓（どちらのタブからも開く）。行数を返して閉じる */
+  async function detailCheck(label, view) {
+    await clickWhen("詳細");
+    const m = await waitFor(() => document.querySelector('[aria-label="詳細"]'), 10000);
+    const text = norm(m?.textContent);
+    const lines = view ? view.utterances.length + view.unresolved.length : null;
+    check(
+      `「詳細」が${label}から開く${lines !== null ? "・行数がエンジンと同じ" : ""}`,
+      m && (lines === null || text.includes(`${lines.toLocaleString()}行`)),
+      lines !== null ? `${lines} 行（本文 ${view.utterances.length}・確認用 ${view.unresolved.length}）` : "",
+    );
+    escape();
+    await waitFor(() => !document.querySelector('[aria-label="詳細"]'), 2000);
   }
 
-  async function synthResult(sc, jobId) {
-    const out = lastDone.outDir;
-    const fx = sc.fixtures;
-    // 保存しないで「完了」→「まだ保存していません」→「← 文字起こしに戻る」
-    await finishCheck("unsaved", "保存しないで");
-    await clickWhen("← 文字起こしに戻る");
-    await screen("文字起こし", 5000);
-    // 1 回目: 手直しなしで .md と .txt → 見本（Python 版と同じ中身）と比べる
+  async function synthScenario(sc) {
+    const L = JA;
+    const name1 = sc.recording.split("/").pop();
+    const name2 = sc.recording2.split("/").pop();
+    await screen(L.newTitle, 30000);
+    check("起動して新しい録音の画面（一覧はまだ空）", bodyText().includes("まだありません"));
+    const m0 = await menuIs(MENU_JA);
+    check("Mac のメニューが日本語（版7）", m0.ok && m0.menu[0]?.items?.[0] === "Kikiwake について", m0.menu.map((x) => x.title).join(" "));
+    check("窓が広い（1100px 以上）と一覧を横に置く", document.querySelector(".objects-sidebar:not(.overlay)"), `窓の幅 ${innerWidth}px`);
+    info(`安全な文脈 ${window.isSecureContext}・navigator.clipboard ${Boolean(navigator.clipboard?.writeText)}`);
+    await updateCheck(false);
+    await snap(sc, "file-empty");
+    await dragCheck();
+
+    // 1本目を始める
+    const start = await chooseFile(sc.recording, L);
+    await snap(sc, "file-selected");
+    start.click();
+    await waitFor(() => runningEntry() && title() === name1, 5000);
+    check("処理中の録音が一覧の一番上に「文字起こし中」", chipOf(runningEntry()).startsWith("文字起こし中"), entryText(runningEntry()));
+    check("処理中は題を出さない（上の帯の印と重なるため）", !heading() && headChip().startsWith("文字起こし中"), `題「${heading()}」・印「${headChip()}」`);
+    await sleep(1000);
+    // 閉じる確かめ（順番待ちなし）: 段階に合った文だけ
+    const b0 = await closeCheck("順番待ちなし", (body) => body.length === 1 && closeCaseOf(body[0], name1) !== "（知らない文）");
+    info(`そのときの段階の文: ${closeCaseOf(b0[0], name1)}`);
+
+    // 声を文字にする段階に入ったら、閉じる確かめの文 → 中止 → 再開する（声の聞き分けの結果を使う）
+    const tr = await waitFor(() => stageText() === "声を文字にする", 180000, 200);
+    check("声を文字にする段階に進む", tr);
+    await closeCheck("声を文字にしている間", (body) => body.length === 1 && body[0] === CLOSE.converting(name1));
+    await sleep(1500);
+    await clickWhen("中止");
+    await waitFor(() => dialogTitle() === "文字起こしを中止しますか？", 5000);
+    await clickWhen("中止する");
+    await screen("中止しました", 20000);
+    check("中止すると声の聞き分けの結果が残る", bodyText().includes("声の聞き分けの結果は残っています"));
+    check("中止した録音は一覧で「中断」", await waitFor(() => chipOf(entryOf(name1)) === "中断", 5000), entryText(entryOf(name1)));
+    await clickWhen("再開する");
+    check("再開すると前回の聞き分けを使う", await waitFor(() => bodyText().includes("前回の結果を使用"), 10000));
+    check("再開すると一覧は処理中の1行だけ（同じ録音を2行にしない）", await waitFor(() => runningEntry() && !entryOf(name1), 5000) || entryEls().filter((e) => entryName(e) === name1).length === 1);
+
+    // 処理中に2本目を選ぶ → 順番待ち
+    await newRecording(L);
+    const start2 = await chooseFile(sc.recording2, L, L.enqueue);
+    check("処理中に選ぶと「順番待ちに入れる」と、今の文字起こしの名前", bodyText().includes(`今は「${name1}」を文字起こししています`));
+    start2.click();
+    const q = await waitFor(() => queued()[0], 3000);
+    check("順番待ちが一覧に「順番待ち（次）」", q && chipOf(q) === "順番待ち（次）", entryText(q));
+    check("順番待ちに入れたと知らせる", await waitFor(() => toast() === "順番待ちに入れました", 2000), toast());
+    check(
+      "順番待ちを選ぶと説明（閉じると破棄）と「順番待ちから外す」",
+      heading() === "順番待ち" && bodyText().includes("順番待ちのままアプリを閉じると、順番待ちは破棄します（まだはじめていないので、元のファイルも文字起こしも失いません）。") && button("順番待ちから外す"),
+      heading(),
+    );
+    await snap(sc, "queued");
+    await closeCheck("順番待ちが1件", (body) => body.length === 2 && body[0] === CLOSE.converting(name1) && body[1] === CLOSE.queue(1));
+    await overflowCheck("順番待ちの画面");
+    // 処理中の録音を開く → 進み具合
+    await openEntry(name1, { wait: false });
+    check("処理中の録音を選ぶと進み具合", await waitFor(() => stageText() === "声を文字にする" && title() === name1, 5000));
+
+    // 1本目が終わる → 話者のタブ（見ている）。順番待ちの2本目がすぐ始まる
+    const w = await waitNaming(sc, L);
+    const job1 = lastDone.jobId;
+    check("処理が終わって話者のタブ", true, `${fmt(w.sec)} 秒・文字起こしの％の表示 ${w.pcts} 通り`);
+    const r2 = await waitFor(() => runningEntry() && entryName(runningEntry()) === name2, 10000);
+    check("1本目が終わると、順番待ちの2本目がすぐ始まる（断られない）", r2 && !toast().includes("はじめられませんでした") && queued().length === 0, entryText(runningEntry()) || toast());
+    check("見ている1本目は「保存前」・「話者 4・名前なし」", headChip() === "保存前" && entryText(entryOf(name1)).includes("話者 4・名前なし"), `${headChip()}／${entryText(entryOf(name1))}`);
+    // 見ていない録音を処理しているときも、閉じるときに確かめる（その録音の名前で）
+    await closeCheck("見ていない録音を処理中", (body) => body.length === 1 && body[0].startsWith(`閉じると「${name2}」の文字起こしを`));
+
+    // 話者のタブ
+    await snap(sc, "naming");
+    await namingChecks(sc);
+    check("保存の帯（話者のタブ）に「保存先を変える」", button("保存先を変える"));
+    await detailCheck("話者のタブ（名前を確定してから）", null);
+    // 話者のタブから .md・.txt を保存（名前を確定してから保存する）→ 見本（Python 版と同じ中身）と比べる
     await clickWhen(".txt");
-    const r1 = await saveAndWait();
-    check("手直しなしの保存（.md・.txt）", r1 === "saved", norm(bodyText().match(/保存しました[^\n]*/)?.[0]));
+    const s1 = await saveAndWait();
+    check("話者のタブから保存すると、名前を確定して保存（2件）", s1 === "saved" && tab() === "話者" && bodyText().includes("保存しました（2件）"), norm(bodyText().match(/保存しました[^\n]*/)?.[0]));
+    const out = lastDone && lastDone.jobId === job1 ? lastDone.outDir : `${sc.recording.replace(/\.wav$/, "")}_文字起こし`;
+    const fx = sc.fixtures;
     await compareFile("保存した .md が見本と同じ（題・元ファイル・処理日を除く）", `${out}/transcript_named.md`, await invoke("dev_read", { path: `${fx}/saved_files/transcript_named.md` }), normalizeMd);
     await compareFile("保存した .txt が見本と同じ", `${out}/transcript_named.txt`, await invoke("dev_read", { path: `${fx}/saved_files/transcript_named.txt` }));
+    check("保存すると印が「保存済み」", headChip() === "保存済み" && (await waitFor(() => chipOf(entryOf(name1)) === "保存済み", 3000)), headChip());
+    check("名前を付けた録音の行に「松本・田中ほか2人」（約束 版9）", await waitFor(() => entryText(entryOf(name1)).includes("松本・田中ほか2人"), 3000), entryText(entryOf(name1)));
 
-    // 手直し（contract/fixtures/edits_example.json と同じ3つ）を画面で行う
+    // 文字起こしのタブ（名前が同じなら「保存しました」は消えない）
+    await toTab(L.transcript);
+    check("話者→文字起こしで「保存しました」と「保存済み」が消えない", bodyText().includes("保存しました（2件）") && headChip() === "保存済み", headChip());
+    const view = await transcriptChecks(sc, job1, true);
+    await snap(sc, "result");
+    await detailCheck("文字起こしのタブ", view);
+
+    // 手直し（contract/fixtures/edits_example.json と同じ3つ）→「保存後に手直し」
     const edits = JSON.parse(await invoke("dev_read", { path: `${fx}/edits_example.json` }));
     const [tid, text] = Object.entries(edits.texts)[0];
-    const span = row(tid)?.querySelector('span[title="ダブルクリックで文字を直す"]');
-    if (check(`行 ${tid} の文字を直す欄`, span)) {
-      dblclick(span);
-      const ta = await waitFor(() => row(tid)?.querySelector("textarea"), 3000);
-      if (ta) {
-        setValue(ta, text);
-        keydown(ta, "Enter", { metaKey: true });
-      }
-      check(`行 ${tid} の文字を直した（⌘+Enter）`, await waitFor(() => norm(row(tid)?.textContent).includes("直した"), 3000));
-    }
+    check(`行 ${tid} の文字を直した（⌘+Enter）`, await editText(tid, text));
     for (const [id, name] of Object.entries(edits.names)) {
       const nameEl = row(id)?.querySelector("[data-name]");
       if (!check(`行 ${id} の名前`, nameEl)) continue;
@@ -358,26 +555,21 @@
       check(`行 ${id} を「${name}」に（⌘+Enter）`, await waitFor(() => norm(row(id)?.querySelector("[data-name]")?.textContent).startsWith(name), 3000));
     }
     if (edits.confirmed?.length) {
-      await clickWhen("確定して一覧から外す");
-      check("確認用の行を確定", await waitFor(() => bodyText().includes(`${edits.confirmed.length}件を確定しました`), 3000));
+      await clickWhen("本文に入れる");
+      check("確認用の行を本文に入れる", await waitFor(() => bodyText().includes(`${edits.confirmed.length}件を本文に入れました`), 3000));
     }
+    check("保存したあとで手直しすると「保存後に手直し」（上の帯と一覧）", headChip() === "保存後に手直し" && (await waitFor(() => chipOf(entryOf(name1)) === "保存後に手直し", 3000)), headChip());
 
-    // 手直しを残して「完了」→ 注意の帯 →「← 文字起こしに戻る」
-    await finishCheck("edits", "手直しを残して");
-    await clickWhen("← 文字起こしに戻る");
-    await screen("文字起こし", 5000);
-    // 版8: 保存していない手直しがあっても閉じる前に確かめない（手直しは作業フォルダに残る）。閉じて開き直すのは筋書き history で確かめる
-
-    // 2 回目: .json も足して保存 → 同じ名前のファイルがあるので確かめる →「上書きする」
+    // .json も足して保存 → 同じ名前のファイルがあるので確かめる →「上書きする」
     await clickWhen(".json");
-    const r2 = await saveAndWait();
-    check("同じ名前のファイルがあると確かめる", r2 === "dialog");
-    if (r2 === "dialog") {
+    const s2 = await saveAndWait();
+    check("同じ名前のファイルがあると確かめる", s2 === "dialog");
+    if (s2 === "dialog") {
       await clickWhen("上書きする");
-      check("上書きして保存（3件）", await waitFor(() => bodyText().includes("保存しました（3件）"), 15000));
+      check("上書きして保存（3件）→「保存済み」", await waitFor(() => bodyText().includes("保存しました（3件）") && headChip() === "保存済み", 15000), headChip());
     }
     // 画面を通さずに、同じ手直しをエンジンで保存したもの（約束の saveOutputs）と一字一句比べる
-    const ref = await invoke("save_outputs", { jobId, req: { dir: sc.refDir, formats: ["md", "txt", "json"], edits, overwrite: true } });
+    const ref = await invoke("save_outputs", { jobId: job1, req: { dir: sc.refDir, formats: ["md", "txt", "json"], edits, overwrite: true } });
     for (const f of ref.files) {
       const base = f.split("/").pop();
       await compareFile(`手直しを当てた ${base} が、同じ手直しをエンジンで保存したものと同じ`, `${out}/${base}`, await invoke("dev_read", { path: f }));
@@ -390,84 +582,125 @@
     const gotTalk = talkLine(await invoke("dev_read", { path: `${out}/transcript_named.md` }));
     info(`発言時間の行: ${gotTalk === talkLine(editedMd) ? "見本と同じ" : `アプリ「${gotTalk.slice(4, 80)}」／見本「${talkLine(editedMd).slice(4, 80)}」`}`);
     await compareFile("手直しを当てた .json が見本と同じ", `${out}/transcript_named.json`, await invoke("dev_read", { path: `${fx}/saved_files/edited/transcript_named.json` }));
-    // 保存してから「完了」→「文字起こしを保存しました」と保存したファイル
-    await finishCheck("saved", "保存してから");
-    const card = norm(document.querySelector(".card")?.textContent);
-    check("完了の画面に保存したファイルが出る", ["transcript_named.md", "transcript_named.txt", "transcript_named.json"].every((f) => card.includes(f)), card.slice(0, 80));
-    await snap(sc, "done");
-  }
+    // 「…」のメニュー
+    const items = (await moreMenu()).map((b) => norm(b.textContent));
+    check("「…」に Finder で表示（保存したファイル・元のファイル）と「一覧から消す…」", ["保存したファイルを Finder で表示", "元のファイルを Finder で表示", "一覧から消す…"].every((x) => items.includes(x)), items.join(" / "));
+    escape();
 
-  /** 完了の画面の「別の録音を文字起こしする」で別の録音へ移り、同じ録音を選び直す（結果の画面にいれば、先に右上の「完了」） */
-  async function reopen(sc) {
-    check("工程バーの「1 ファイル」（別の録音を選ぶ）も押せる", document.querySelector('button[title="別の録音を選ぶ"]'));
-    if (heading() === "文字起こし") await finishCheck("unsaved", "保存しないで");
-    await clickWhen("別の録音を文字起こしする");
-    await screen("録音を選ぶ", 5000);
-    check("確かめずにファイルの画面へ（版8: 手直しがあっても）", !dialogTitle());
-    const start = await chooseFile(sc);
-    if (!start) return;
-    const prevText = norm(document.querySelector(".band-info")?.textContent);
-    check("前回の結果を使うと知らせる（版6）", prevText.startsWith("前回の結果を使います"), prevText);
-    await snap(sc, "file-reopen");
+    // 処理中に、ほかの録音（書き終えた1本目）を開き直す: 2本目の処理は最後まで進む（エンジンの掃除の直し。約束 版9）
+    await newRecording(L);
+    check("2本目はまだ処理中", runningEntry() && entryName(runningEntry()) === name2, entryText(runningEntry()));
+    await openEntry(name1);
+    check("処理中にほかの録音を開ける（閉じたときの文字起こしのタブ・保存済みのまま）", tab() === L.transcript && headChip() === "保存済み", `${tab()}・${headChip()}`);
+    const playRow = row(view.utterances[0].id)?.querySelector("button");
+    if (check("開き直した録音の行の再生ボタン", playRow && !playRow.disabled)) {
+      await checkPlay("開き直した録音の行（2本目の処理中）", playRow, sc.quiet);
+      if (norm(playRow.textContent) === "■") playRow.click();
+    }
+    const done2 = await waitFor(() => doneIds.some((id) => id !== job1), (sc.timeoutMin || 20) * 60000, 500);
+    check("見ていない2本目が最後まで終わる（処理中にほかの録音を開いても）", done2);
+    check("終わったと知らせる", await waitFor(() => toast() === `「${name2}」の文字起こしが終わりました`, 5000), toast());
+    check("見ていない間に終わった録音に「●」", await waitFor(() => freshOf(entryOf(name2)), 5000), entryText(entryOf(name2)));
+    check("見ている画面は変わらない", title() === name1 && tab() === L.transcript, `${title()}・${tab()}`);
+    await snap(sc, "fresh");
+    await openEntry(name2);
+    check("開くと「●」が消える・話者のタブ", !freshOf(entryOf(name2)) && tab() === L.speakers, entryText(entryOf(name2)));
+
+    // 同じ録音を新しい録音として選び直す → 前回の文字起こしを使い、閉じたときの画面に手直しのまま戻る（版6・版8）
+    await newRecording(L);
+    const s3 = await chooseFile(sc.recording, L);
+    // 帯は新しい版の知らせ（約束 版10）もあるので、「前回の」で始まる帯を探す
+    const prevText = [...document.querySelectorAll(".band-info")].map((e) => norm(e.textContent)).find((x) => x.startsWith("前回の")) ?? "";
+    check("前回の文字起こしを使うと知らせる（版6）", prevText.startsWith("前回の文字起こしを使います"), prevText);
     const estimate = norm(bodyText().match(/所要時間の目安\s*[^\n]*/)?.[0] || "");
     check("所要時間の目安が「すぐに終わります」（版6）", estimate.includes("すぐに終わります"), estimate);
     const t0 = Date.now();
-    start.click();
-    // 版8: 閉じたときの状態があれば、閉じたときの画面（ここでは完了の画面から移ったので結果の画面）に、手直しのまま戻る
-    await screen("文字起こし", (sc.timeoutMin || 20) * 60000);
+    s3.click();
+    await waitFor(() => title() === name1 && tab() && !runningEntry(), (sc.timeoutMin || 20) * 60000, 200);
     const sec = (Date.now() - t0) / 1000;
-    check("選び直すと書き起こしをやり直さずに、閉じたときの結果の画面へ（版6・版8）", sec < 5, `${fmt(sec)} 秒（画面を移る前に 0.5 秒おく分を含む）`);
-    if (sc.names) check("前回の名前が当たっている（版6）", Boolean(lastDone?.names) && Object.values(sc.names).every((n) => bodyText().includes(n)));
-    const edits = sc.fixtures ? JSON.parse(await invoke("dev_read", { path: `${sc.fixtures}/edits_example.json` })) : null;
-    if (edits) {
-      const [tid, text] = Object.entries(edits.texts)[0];
-      const [nid, name] = Object.entries(edits.names).find(([id]) => !edits.confirmed.includes(id)) ?? [];
-      check(
-        "手直し（直した文字・行ごとの名前）が戻っている（版8）",
-        norm(row(tid)?.textContent).includes(norm(text).slice(0, 12)) && (!nid || norm(row(nid)?.querySelector("[data-name]")?.textContent).startsWith(name)),
-        `行 ${tid}・行 ${nid}`,
-      );
-    }
+    check("選び直すと文字起こしをやり直さずに、閉じたときの文字起こしのタブへ（版6・版8）", tab() === L.transcript && sec < 5, `${fmt(sec)} 秒・${tab()}`);
+    check("手直し（直した文字）が戻っている（版8）", await waitFor(() => norm(row(tid)?.textContent).includes(norm(text).slice(0, 12)), 5000));
+    check("選び直しても一覧に同じ録音は1行だけ", entryEls().filter((e) => entryName(e) === name1).length === 1);
+
+    // ドラッグ中の案内（どの画面でも。アプリの中は外枠の知らせ onFileDragOver で出る）
+    await invoke("dev_drag", { over: true, x: 600, y: 400 });
+    const hint = await waitFor(() => document.querySelector(".objects-drop"), 2000);
+    check("ファイルをドラッグしている間、窓全体に「ここに落とすと、新しい録音として追加します」", hint && norm(hint.textContent).includes("ここに落とすと、新しい録音として追加します"));
+    await snap(sc, "drop-hint");
+    await invoke("dev_drag", { over: false, x: 0, y: 0 });
+    check("ドラッグが窓から出ると案内が消える", await waitFor(() => !document.querySelector(".objects-drop"), 2000));
+    // 録音の画面に落とすと、新しい録音として確認する
+    await invoke("dev_drop", { paths: [sc.recording2] });
+    check("録音の画面に落としても、新しい録音として確認", await waitFor(() => heading() === L.newTitle && bodyText().includes(name2) && button(L.start), 10000));
+
+    // 窓の幅: 1100px 未満では一覧をしまい、左上のボタンで重ねて出す
+    await invoke("dev_resize", { width: 900, height: 560 });
+    const narrow = await waitFor(() => !document.querySelector(".objects-sidebar") && document.querySelector(".objects-toolbar .objects-icon-btn"), 3000);
+    check("狭い窓（900px）では一覧をしまい、左上に一覧を出すボタン", narrow, `窓の幅 ${innerWidth}px`);
+    await showList();
+    check("ボタンで一覧を重ねて出す", document.querySelector(".objects-sidebar.overlay"));
+    await snap(sc, "narrow-list");
+    hideOverlay();
+    await invoke("dev_resize", { width: 1200, height: 800 });
+    check("広い窓に戻すと一覧を横に置く", await waitFor(() => document.querySelector(".objects-sidebar:not(.overlay)"), 3000), `窓の幅 ${innerWidth}px`);
+
+    // はみ出し（日本語）
+    await overflowCheck("新しい録音の画面（選んだあと）");
+    await openEntry(name1);
+    await overflowCheck("文字起こしのタブ");
+    await toTab(L.speakers);
+    await overflowCheck("話者のタブ");
   }
 
-  async function mainScenario(sc) {
-    await screen("録音を選ぶ", 30000);
-    check("起動してファイルの画面", true);
-    const m0 = await menuIs(MENU_JA);
-    check("Mac のメニューが日本語（版7）", m0.ok && m0.menu[0]?.items?.[0] === "Kikiwake について", m0.menu.map((x) => x.title).join(" "));
-    info(`安全な文脈 ${window.isSecureContext}・navigator.clipboard ${Boolean(navigator.clipboard?.writeText)}`);
-    await snap(sc, "file-empty");
-    await dragCheck();
-    const start = await chooseFile(sc);
-    if (!start) return;
+  // ---- 説明書の写真（KIKIWAKE_E2E_REC で録音をユーザー名の入らない場所に置いて撮る） -------------------------
+
+  async function photoScenario(sc) {
+    const L = JA;
+    await screen(L.newTitle, 30000);
+    // 1本目を最後まで: 名前を付けて保存 → 文字起こしのタブ（写真 result）
+    const s1 = await chooseFile(sc.recording, L);
+    s1.click();
+    await waitNaming(sc, L);
+    for (const [label, name] of Object.entries(sc.names || {})) await typeName(label, name);
+    const first = Object.keys(sc.names || {})[0];
+    if (first) buttons().find((b) => norm(b.textContent).startsWith(first))?.click();
+    await sleep(300);
+    await snap(sc, "naming");
+    await toTab(L.transcript);
+    check("保存（写真用）", (await saveAndWait()) === "saved");
+    await sleep(500);
+    await snap(sc, "result");
+    // 新しい録音でファイルを選んだところ（写真 file-selected。一覧に1本目がある）
+    await newRecording(L);
+    await chooseFile(sc.recording2, L);
     await snap(sc, "file-selected");
-    start.click();
-    await processing(sc);
-    await namingScreen(sc);
-    const { jobId } = await resultScreen(sc);
-    if (sc.name === "synth") await synthResult(sc, jobId);
-    if (sc.reopen) await reopen(sc);
+  }
+
+  // ---- 実録音（中身は出さず、時間と件数だけ） ------------------------------------------------
+
+  async function realScenario(sc) {
+    const L = JA;
+    await screen(L.newTitle, 30000);
+    const s1 = await chooseFile(sc.recording, L);
+    s1.click();
+    const w = await waitNaming(sc, L);
+    check("処理が終わって話者のタブ", true, `${fmt(w.sec)} 秒・話者 ${lastDone?.speakers}・確認用 ${lastDone?.unresolvedCount}`);
+    await toTab(L.transcript);
+    await transcriptChecks(sc, lastDone.jobId, false);
+    if (sc.reopen) {
+      await newRecording(L);
+      const s2 = await chooseFile(sc.recording, L);
+      const t0 = Date.now();
+      s2.click();
+      await waitFor(() => tab() && !runningEntry(), (sc.timeoutMin || 20) * 60000, 200);
+      check("選び直すと文字起こしをやり直さない", (Date.now() - t0) / 1000 < 10, `${fmt((Date.now() - t0) / 1000)} 秒`);
+    }
   }
 
   // ---- 英語（約束 版7）。scripts/e2e_mac.sh が -AppleLanguages (en-US) で起動して、英語の Mac のまねをする ----------
 
   const MENU_EN = ["Kikiwake", "File", "Edit", "View", "Window", "Help"];
   const MENU_JA = ["Kikiwake", "ファイル", "編集", "表示", "ウインドウ", "ヘルプ"];
-
-  async function waitForAsync(fn, ms = 5000, step = 200) {
-    const t0 = Date.now();
-    for (;;) {
-      let v = null;
-      try {
-        v = await fn();
-      } catch {
-        v = null;
-      }
-      if (v) return v;
-      if (Date.now() - t0 > ms) return null;
-      await sleep(step);
-    }
-  }
 
   /** Mac のメニューが want の並びになるまで待つ（言語を切り替えると外枠が作り直す） */
   async function menuIs(want) {
@@ -480,7 +713,7 @@
     return { ok: Boolean(ok), menu: last };
   }
 
-  /** 工程バーの右端の言語の切り替え（select）を操作する */
+  /** 右上の言語の切り替え（select）を操作する */
   async function switchLocale(locale) {
     const sel = document.querySelector("select[data-i18n-switch]");
     if (!sel) return false;
@@ -546,7 +779,8 @@
   const speakersOf = (text) => text.split("\n").map((l) => l.match(/^\[[\d:]+\] (.+?)\*?: /)?.[1]).filter(Boolean);
 
   async function enScenario(sc) {
-    await screen("Choose a recording", 30000);
+    const L = EN;
+    await screen(L.newTitle, 30000);
     check(
       "英語の Mac のまねで起動すると、画面が英語で始まる",
       document.documentElement.lang === "en",
@@ -560,29 +794,26 @@
       m0.menu.map((x) => `${x.title}（${x.items.slice(0, 2).join("・")}）`).join(" "),
     );
     await snap(sc, "en-file-empty");
-    await overflowCheck("ファイルの画面（英語）");
-    await invoke("dev_drop", { paths: [sc.recording] });
-    const start = await waitFor(() => button("Start transcription"), 20000);
-    if (!check("ドロップでファイルの確認（英語）", start, start ? "" : norm(bodyText()).slice(0, 120))) return;
-    await overflowCheck("ファイルの画面・選んだあと（英語）");
+    await overflowCheck("新しい録音の画面（英語）");
+    const start = await chooseFile(sc.recording, L);
+    await overflowCheck("新しい録音の画面・選んだあと（英語）");
     start.click();
-    await screen("Transcribing", 5000);
-    const t0 = Date.now();
-    await waitFor(() => heading() === "Name the speakers" || heading() === "Stopped partway", (sc.timeoutMin || 20) * 60000, 500);
-    if (heading() !== "Name the speakers") throw new Error(`処理が終わらない（${heading()}）`);
-    check("処理が終わって名前付けの画面（英語）", true, `${fmt((Date.now() - t0) / 1000)} 秒`);
+    const w = await waitNaming(sc, L);
+    check("処理が終わって話者のタブ（英語）", tab() === "Speakers", `${fmt(w.sec)} 秒`);
     const labels = [...new Set(buttons().map((b) => norm(b.textContent).match(/^(Speaker [A-Z]+)/)?.[1]).filter(Boolean))];
-    check("名前付けの話者が英語のラベル（Speaker A…）", labels.length > 0 && (!sc.expectSpeakers || labels.length === sc.expectSpeakers), labels.join(", "));
+    check("話者が英語のラベル（Speaker A…）", labels.length > 0 && (!sc.expectSpeakers || labels.length === sc.expectSpeakers), labels.join(", "));
+    const name = sc.recording.split("/").pop();
+    check("一覧の行と印が英語（4 speakers · no names・Not saved yet）", entryText(entryOf(name)).includes("4 speakers · no names") && chipOf(entryOf(name)) === "Not saved yet", entryText(entryOf(name)));
+    check("保存の帯に「Change folder」", button("Change folder"));
     await snap(sc, "en-naming");
-    await overflowCheck("名前付けの画面（英語）");
+    await overflowCheck("話者のタブ（英語）");
 
-    await clickWhen("View transcript →");
-    await screen("Transcript", 20000);
+    await toTab(L.transcript);
     const out = lastDone.outDir;
     const folder = out.split("/").pop();
     check("既定の保存先が「〈元の名前〉_transcript」（版7）", folder === "synth_meeting_transcript", folder);
     await snap(sc, "en-result");
-    await overflowCheck("結果の画面（英語）");
+    await overflowCheck("文字起こしのタブ（英語）");
     const view = await invoke("get_transcript", { jobId: lastDone.jobId, named: false });
     const hasUnresolved = view.unresolved.length > 0;
 
@@ -590,7 +821,7 @@
     await clickWhen(".txt");
     await clickWhen(".json");
     await clickWhen("Save");
-    check("英語で保存（3件）", await waitFor(() => bodyText().includes("Saved (3 files)"), 15000), norm(bodyText().match(/Saved[^\n]*/)?.[0]));
+    check("英語で保存（3件）→「Saved」", await waitFor(() => bodyText().includes("Saved (3 files)") && headChip() === "Saved", 15000), norm(bodyText().match(/Saved[^\n]*/)?.[0]));
     const read = async () => {
       const r = {};
       for (const f of ["md", "txt", "json"]) r[f] = await invoke("dev_read", { path: `${out}/transcript.${f}` });
@@ -620,7 +851,7 @@
     check("保存した .json の話者が「Speaker A」「Unknown」", jsonWho.every((w) => /^Speaker [A-Z]+$/.test(w) || w === "Unknown"), jsonWho.join(", "));
 
     // 日本語に切り替える → 画面・メニュー・保存が日本語に。本文は英語と同じ（ラベルだけ違う）
-    check("言語を日本語に切り替えると画面が日本語", (await switchLocale("ja")) && (await waitFor(() => heading() === "文字起こし", 3000)), heading());
+    check("言語を日本語に切り替えると画面が日本語", (await switchLocale("ja")) && (await waitFor(() => tab() === "文字起こし", 3000)), tab());
     const m1 = await menuIs(MENU_JA);
     check("Mac のメニューも日本語に作り直す（版7）", m1.ok && m1.menu[0]?.items?.[0] === "Kikiwake について", m1.menu.map((x) => x.title).join(" "));
     await clickWhen("保存");
@@ -644,15 +875,12 @@
     check("既定の保存先は言語を切り替えても変えない", bodyText().includes("synth_meeting_transcript"));
 
     // 英語に戻す → メニューも英語に
-    check("英語に戻すと画面が英語", (await switchLocale("en")) && (await waitFor(() => heading() === "Transcript", 3000)), heading());
+    check("英語に戻すと画面が英語", (await switchLocale("en")) && (await waitFor(() => tab() === "Transcript", 3000)), tab());
     const m2 = await menuIs(MENU_EN);
     check("Mac のメニューも英語に戻る", m2.ok, m2.menu.map((x) => x.title).join(" "));
   }
 
-  // ---- 履歴と閉じたときの状態（約束 版8）。同じ作業フォルダで2回起動する（history1 → 閉じる → history2） ----------
-
-  const historyRowOf = (name) => [...document.querySelectorAll("[data-history-id]")].find((el) => norm(el.querySelector("span")?.textContent) === name);
-  const rowButton = (el, label) => [...(el?.querySelectorAll("button") ?? [])].find((b) => norm(b.textContent) === label);
+  // ---- 履歴と閉じたときの状態（約束 版8・版9）。同じ作業フォルダで2回起動する（history1 → 閉じる → history2） ----------
 
   async function typeName(label, name) {
     const item = buttons().find((b) => norm(b.textContent).startsWith(label));
@@ -682,119 +910,153 @@
     }
   }
 
-  /** 工程バーの「1 ファイル」（結果を出したあと押せる）か、履歴の「← 録音を選ぶ」で、ファイルの画面へ */
-  async function toFileScreen() {
-    if (heading() === "履歴") await clickWhen("← 録音を選ぶ");
-    else if (heading() !== "録音を選ぶ") document.querySelector('button[title="別の録音を選ぶ"]')?.click();
-    await screen("録音を選ぶ", 5000);
-  }
-
-  async function openHistory() {
-    await toFileScreen();
-    await clickWhen("履歴");
-    await screen("履歴", 5000);
-    await waitFor(() => document.querySelectorAll("[data-history-id]").length > 0, 5000);
-  }
+  const nameOf = (path) => path.split("/").pop();
+  /** 文字起こしのタブの最初の行の再生ボタン */
+  const firstPlay = () => document.querySelector("[data-row-id] button");
 
   async function history1(sc) {
-    await screen("録音を選ぶ", 30000);
-    // 1本目: 最後まで処理 → 名前 → 結果で文字を直す → 名前付けに戻って名前を1つ入れかける → 別の録音へ
-    await invoke("dev_drop", { paths: [sc.recording] });
-    await clickWhen("文字起こしを始める", 20000);
-    await waitFor(() => heading() === "話者に名前を付ける" || heading() === "途中で止まりました", sc.timeoutMin * 60000, 500);
-    if (!check("1本目を処理して名前付けの画面", heading() === "話者に名前を付ける", heading())) return null;
+    const L = JA;
+    const [n1, n2, n3, n4] = [sc.recording, sc.recording2, sc.recording3, sc.recording4].map(nameOf);
+    await screen(L.newTitle, 30000);
+    // 新しい版の帯を「この版は知らせない」で消す（開き直しても出ないことを history2 で見る）
+    await updateCheck(true);
+    // 1本目: 最後まで処理 → 名前 → 文字起こしのタブで保存 → 文字を直す（保存後に手直し）→ 話者のタブで名前を1つ入れかける
+    (await chooseFile(sc.recording, L)).click();
+    await waitNaming(sc, L);
     const job1 = lastDone.jobId;
     for (const [label, name] of Object.entries(sc.names)) await typeName(label, name);
-    await clickWhen("文字起こしを見る →");
-    await screen("文字起こし", 20000);
+    await toTab(L.transcript);
+    check("1本目を保存", (await saveAndWait()) === "saved");
     const edits = JSON.parse(await invoke("dev_read", { path: `${sc.fixtures}/edits_example.json` }));
     const [tid, text] = Object.entries(edits.texts)[0];
-    check(`行 ${tid} の文字を直す`, await editText(tid, text));
-    await clickWhen("← 名前付けに戻る");
-    await screen("話者に名前を付ける", 5000);
+    check(`行 ${tid} の文字を直す →「保存後に手直し」`, (await editText(tid, text)) && headChip() === "保存後に手直し", headChip());
+    await toTab(L.speakers);
     const dLabel = Object.keys(sc.names).slice(-1)[0];
     await typeName(dLabel, "入れかけの名前");
     await sleep(600);
     const d1 = await readDraft(sc, job1);
     check(
-      "閉じたときの状態を作業フォルダに書く（名前付けの画面・入れかけの名前・直した文字・保存していない）",
-      d1?.draft?.screen === "naming" && d1.draft.names?.[dLabel] === "入れかけの名前" && d1.draft.textHistory?.[tid]?.slice(-1)[0] === text && d1.draft.unsaved === true,
-      d1 ? `screen ${d1.draft?.screen}・unsaved ${d1.draft?.unsaved}` : "draft.json が無い",
+      "閉じたときの状態を作業フォルダに書く（話者のタブ・入れかけの名前・直した文字・保存したことがある・保存後に変えた）",
+      d1?.draft?.screen === "naming" &&
+        d1.draft.names?.[dLabel] === "入れかけの名前" &&
+        d1.draft.textHistory?.[tid]?.slice(-1)[0] === text &&
+        d1.draft.savedOnce === true &&
+        d1.draft.unsaved === true,
+      d1 ? `screen ${d1.draft?.screen}・savedOnce ${d1.draft?.savedOnce}・unsaved ${d1.draft?.unsaved}` : "draft.json が無い",
     );
-    // 工程バーの「1 ファイル」で別の録音へ（版8: 保存していない手直しがあっても確かめない）
-    document.querySelector('button[title="別の録音を選ぶ"]')?.click();
-    await screen("録音を選ぶ", 5000);
-    check("保存していない手直しがあっても、確かめずに別の録音へ移る（版8）", !dialogTitle());
-    // 2本目: 書き起こしに入ったら窓を閉じる → 処理中の確かめ（文は「履歴から続きを再開できます」）
-    await invoke("dev_drop", { paths: [sc.recording2] });
-    await clickWhen("文字起こしを始める", 20000);
-    await screen("文字起こし中", 5000);
-    const tr = await waitFor(() => norm(document.querySelector(".page-scroll .card span")?.textContent) === "書き起こし", 180000, 200);
-    check("2本目は書き起こしの段階まで進む", tr);
-    await sleep(1500);
+
+    // 2本目: 始めてから1本目を開いて見ている間に、裏で最後まで終わる →「●」
+    await newRecording(L);
+    (await chooseFile(sc.recording2, L)).click();
+    await waitFor(() => runningEntry(), 5000);
+    await openEntry(n1);
+    check("処理中にほかの録音を開いて見る", title() === n1 && tab() === L.speakers, `${title()}・${tab()}`);
+    const done2 = await waitFor(() => doneIds.some((id) => id !== job1), sc.timeoutMin * 60000, 500);
+    check("見ていない2本目が最後まで終わる", done2);
+    check("見ていない間に終わった2本目に「●」", await waitFor(() => freshOf(entryOf(n2)), 5000), entryText(entryOf(n2)));
+
+    // 3本目: 声を文字にする段階で、4本目を順番待ちに入れて閉じる → 確かめる窓（段階の文と順番待ちの一文）→「閉じる」
+    await newRecording(L);
+    (await chooseFile(sc.recording3, L)).click();
+    const tr = await waitFor(() => stageText() === "声を文字にする", 180000, 200);
+    check("3本目は声を文字にする段階まで進む", tr);
+    await newRecording(L);
+    (await chooseFile(sc.recording4, L, L.enqueue)).click();
+    check("4本目は順番待ち", await waitFor(() => queued().length === 1, 3000));
+    await sleep(800);
     await invoke("dev_close");
-    const d = await waitFor(() => dialogTitle() === "処理中です。閉じますか？", 5000);
-    check("処理中に閉じると確かめる。文は「履歴から続きを再開できます」", d && bodyText().includes("履歴から続きを再開できます"));
+    const d = await waitFor(() => dialogTitle() === CLOSE_TITLE, 5000);
+    const body = dialogBody();
+    check(
+      "閉じると確かめる（聞き分けは残り、文字にしている途中の分と、順番待ちの1件は破棄）",
+      d && body.length === 2 && body[0] === CLOSE.converting(n3) && body[1] === CLOSE.queue(1),
+      body.join(" ／ ").slice(0, 240),
+    );
+    info(`${n4} は順番待ちのまま閉じる`);
     return d ? "close" : null;
   }
 
   async function history2(sc) {
-    await screen("録音を選ぶ", 30000);
-    await openHistory();
-    const names = [...document.querySelectorAll("[data-history-id]")].map((el) => norm(el.querySelector("span")?.textContent));
-    check("閉じて開き直すと、2本とも履歴に出る（最後に使った順: 途中で閉じた2本目が上）", names.join("|") === "synth_meeting_2.wav|synth_meeting.wav", names.join(" / "));
-    let r1 = historyRowOf("synth_meeting.wav");
-    const r2 = historyRowOf("synth_meeting_2.wav");
-    const job1 = r1?.getAttribute("data-history-id");
-    check("2本目は「途中 ・ 話者の判定まで済んでいます」で「続きから」", norm(r2?.textContent).includes("途中 ・ 話者の判定まで済んでいます") && rowButton(r2, "続きから"), norm(r2?.textContent).slice(0, 70));
-    check("1本目は「名前あり」「保存していない手直しあり」で「開く」", ["名前あり", "保存していない手直しあり"].every((w) => norm(r1?.textContent).includes(w)) && rowButton(r1, "開く"), norm(r1?.textContent).slice(0, 70));
-    await snap(sc, "history");
-    // 1本目を開く → 閉じたときの名前付けの画面に、入れかけの名前のまま
-    rowButton(r1, "開く").click();
-    await screen("話者に名前を付ける", 10000);
+    const L = JA;
+    const [n1, n2, n3, n4] = [sc.recording, sc.recording2, sc.recording3, sc.recording4].map(nameOf);
+    await screen(L.newTitle, 30000);
+    await waitFor(() => entryEls().length >= 3, 5000);
+    await sleep(1500);
+    check("「この版は知らせない」にした版の帯は、開き直しても出ない（約束 版10）", !document.querySelector("[data-update-band]"));
+    const names = entryEls().map(entryName);
+    check("閉じて開き直すと3本が一覧に出て、順番待ちの4本目は無い（破棄）・途中で閉じた3本目が一番上", names.length === 3 && !names.includes(n4) && names[0] === n3, names.join(" / "));
+    check("途中で閉じた3本目は「中断」", chipOf(entryOf(n3)) === "中断", entryText(entryOf(n3)));
+    check("見ていない間に終わった2本目の「●」は、閉じても残る", freshOf(entryOf(n2)), entryText(entryOf(n2)));
+    check(
+      "1本目は「保存後に手直し」で、付けた名前が行に出る（約束 版9）",
+      chipOf(entryOf(n1)) === "保存後に手直し" && entryText(entryOf(n1)).includes("松本・田中ほか2人"),
+      entryText(entryOf(n1)),
+    );
+    await snap(sc, "history-list");
+    // 1本目を開く → 閉じたときの話者のタブに、入れかけの名前のまま
+    await openEntry(n1);
     const dLabel = Object.keys(sc.names).slice(-1)[0];
     const input = await typeName(dLabel);
-    check("開き直すと、閉じたときの名前付けの画面で、入れかけの名前が戻る（版8）", input?.value === "入れかけの名前", input?.value);
+    check("開き直すと、閉じたときの話者のタブで、入れかけの名前が戻る（版8）", tab() === L.speakers && input?.value === "入れかけの名前", `${tab()}・${input?.value}`);
     if (input) setValue(input, sc.names[dLabel]);
-    await clickWhen("文字起こしを見る →");
-    await screen("文字起こし", 20000);
+    await toTab(L.transcript);
     const edits = JSON.parse(await invoke("dev_read", { path: `${sc.fixtures}/edits_example.json` }));
     const [tid, text] = Object.entries(edits.texts)[0];
     check("直した文字が戻る（版8）", norm(row(tid)?.textContent).includes(norm(text).slice(0, 12)));
-    const firstId = document.querySelector("[data-row-id]")?.getAttribute("data-row-id");
-    const playBtn = () => row(firstId)?.querySelector("button");
-    check("元の録音があれば行を再生できる", playBtn() && !playBtn().disabled);
-    // 元の録音が見つからないとき: 履歴に出て開ける。帯が出て、行の再生はできない
-    await toFileScreen();
+    check("元の録音があれば行を再生できる", firstPlay() && !firstPlay().disabled);
+    // 2本目を開くと「●」が消える
+    await openEntry(n2);
+    check("開くと「●」が消える", !freshOf(entryOf(n2)));
+
+    // 元のファイルが見つからない（移した）: 一覧の行に一言。開くと帯と「ファイルを選び直す」、行の再生はできない
     await invoke("dev_rename", { from: sc.recording, to: `${sc.recording}.moved` });
-    await openHistory();
-    r1 = historyRowOf("synth_meeting.wav");
-    check("元の録音を移すと、履歴に「元のファイルが見つかりません」", norm(r1?.textContent).includes("元のファイルが見つかりません"));
-    rowButton(r1, "開く")?.click();
-    await screen("文字起こし", 10000);
+    await newRecording(L);
+    check("元の録音を移すと、一覧の行に「元のファイルが見つかりません」", await waitFor(() => entryText(entryOf(n1)).includes("元のファイルが見つかりません"), 5000), entryText(entryOf(n1)));
+    await openEntry(n1);
+    await toTab(L.transcript);
     check(
-      "元のファイルが無くても開ける。帯が出て、行の再生はできない（版8）",
-      bodyText().includes("元のファイルが見つかりません。書き起こしは読めますが") && playBtn()?.disabled === true,
+      "元のファイルが無くても開ける。帯（残っているもの・再生だけできない）と「ファイルを選び直す」、行は再生できない",
+      bodyText().includes("元のファイルが見つかりません") && bodyText().includes("発言の再生だけできません") && button("ファイルを選び直す") && firstPlay()?.disabled === true,
     );
     await snap(sc, "result-missing");
     await invoke("dev_rename", { from: `${sc.recording}.moved`, to: sc.recording });
-    // 1本目を消す → 確かめる → 一覧から消える。元の録音は残り、作業フォルダは消える
-    await openHistory();
-    rowButton(historyRowOf("synth_meeting.wav"), "消す")?.click();
-    const dlg = await waitFor(() => dialogTitle() === "履歴から消しますか？", 3000);
-    check("消す前に確かめる（元の録音と保存したファイルは消えないと書いてある）", dlg && bodyText().includes("元の録音と、保存した文字起こしのファイルは消えません"));
-    // ダイアログの「消す」（一覧の各行にも「消す」があるので、ダイアログの中のボタンを押す）
+
+    // 元のファイルが変わった（更新日時だけ変わった）: 新しい録音として落とすと「この場所の録音は、前に文字起こししています」
+    await invoke("dev_touch", { path: sc.recording });
+    await newRecording(L);
+    await invoke("dev_drop", { paths: [sc.recording] });
+    check("変わったファイルを選ぶと「この場所の録音は、前に文字起こししています」（約束 版9）", await waitFor(() => bodyText().includes("この場所の録音は、前に文字起こししています"), 10000));
+    check("一覧の1本目に「元のファイルが変わっています」（約束 版9）", await waitFor(() => entryText(entryOf(n1)).includes("元のファイルが変わっています"), 5000), entryText(entryOf(n1)));
+    const pos = entryEls().indexOf(entryOf(n1));
+    await openEntry(n1);
+    await toTab(L.transcript);
+    check("開くと帯「元のファイルが変わっています」と「このファイルで結び直す」", bodyText().includes("元のファイルが変わっています") && button("このファイルで結び直す"));
+    await snap(sc, "result-changed");
+    await clickWhen("このファイルで結び直す");
+    check("結び直すと帯が消えて、行を再生できる", await waitFor(() => !bodyText().includes("元のファイルが変わっています") && firstPlay() && !firstPlay().disabled, 10000));
+    check("結び直しても一覧の場所は変わらない（録音の ID は変わる）", await waitFor(() => entryEls().indexOf(entryOf(n1)) === pos && !entryText(entryOf(n1)).includes("元のファイル"), 5000), `${pos} → ${entryEls().indexOf(entryOf(n1))}`);
+
+    // 一覧から消す（「…」のメニュー）→ 確かめる → 消える。元の録音と保存したファイルは残り、作業フォルダは消える
+    const job1 = (entryOf(n1)?.getAttribute("data-entry") || "").replace(/^h:/, "");
+    const saved = `${sc.recording.replace(/\.wav$/, "")}_文字起こし/transcript_named.md`;
+    const menu = await moreMenu();
+    menu.find((b) => norm(b.textContent) === "一覧から消す…")?.click();
+    const dlg = await waitFor(() => dialogTitle() === "一覧から消しますか？", 3000);
+    check("消す前に確かめる（元のファイルと保存したファイルは消えないと書いてある）", dlg && bodyText().includes("元のファイルと、保存したファイルは消えません"));
     if (dlg) document.querySelector(".dialog .btn-danger")?.click();
-    await waitFor(() => !historyRowOf("synth_meeting.wav"), 5000);
+    await waitFor(() => !entryOf(n1), 5000);
     const recKept = await invoke("dev_exists", { path: sc.recording });
+    const savedKept = await invoke("dev_exists", { path: saved });
     const jobGone = !(await invoke("dev_exists", { path: `${sc.cacheDir}/jobs/${job1}` }));
-    check("消すと一覧から消え、作業フォルダも消える。元の録音は残る", !historyRowOf("synth_meeting.wav") && recKept && jobGone, `元の録音 ${recKept}・作業フォルダが消えた ${jobGone}`);
-    // 2本目を続きから（話者の判定を使い回し、書き起こしから）
-    rowButton(historyRowOf("synth_meeting_2.wav"), "続きから")?.click();
-    await screen("文字起こし中", 5000);
-    check("続きからは、前回の話者の判定を使う", await waitFor(() => bodyText().includes("前回の結果を使用"), 10000));
-    await waitFor(() => heading() === "話者に名前を付ける" || heading() === "途中で止まりました", sc.timeoutMin * 60000, 500);
-    check("2本目を最後まで処理して名前付けの画面", heading() === "話者に名前を付ける", heading());
+    check("消すと一覧から消え、作業フォルダも消える。元の録音と保存したファイルは残る", !entryOf(n1) && recKept && savedKept && jobGone, `元の録音 ${recKept}・保存したファイル ${savedKept}・作業フォルダが消えた ${jobGone}`);
+
+    // 3本目を再開（声の聞き分けの結果を使い、声を文字にするところから）
+    await openEntry(n3, { wait: false });
+    check("中断した録音を選ぶと「中断しています」と「再開する」", await waitFor(() => heading() === "中断しています" && button("再開する"), 5000), heading());
+    await clickWhen("再開する");
+    check("再開は、前回の聞き分けを使う", await waitFor(() => bodyText().includes("前回の結果を使用"), 10000));
+    await waitNaming(sc, L);
+    check("3本目を最後まで処理して話者のタブ", tab() === L.speakers && title() === n3, `${title()}・${tab()}`);
   }
 
   let sc = null;
@@ -804,7 +1066,7 @@
     sc = await invoke("dev_scenario");
     await T().event.listen("job-done", (e) => {
       lastDone = e.payload;
-      doneAt = Date.now();
+      doneIds.push(e.payload.jobId);
     });
     say(`筋書き ${sc.name} を始める（${location.origin}）`);
     if (sc.fontFix) {
@@ -823,9 +1085,11 @@
       for (const l of await invoke("dev_native_menu")) info(`メニュー ${l}`);
     } else if (sc.name === "setup") await setupScenario();
     else if (sc.name === "en") await enScenario(sc);
+    else if (sc.name === "photo") await photoScenario(sc);
+    else if (sc.name === "real") await realScenario(sc);
     else if (sc.name === "history1") return await history1(sc);
     else if (sc.name === "history2") await history2(sc);
-    else await mainScenario(sc);
+    else await synthScenario(sc);
     return null;
   }
 

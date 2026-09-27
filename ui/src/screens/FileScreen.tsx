@@ -1,12 +1,11 @@
-// 画面2 ファイル選択（UI 画面仕様書 §5）。ドロップは api.onFileDrop で受ける（store/file.ts）。
+// 「＋ 新しい録音」: ファイル選択（UI 画面仕様書 §5）。ドロップは api.onFileDrop で受ける（store/file.ts）。
 // アプリの中ではドラッグ中の知らせも api.onFileDragOver で届く（HTML5 の知らせは届かない。約束 版6）。枠は data-drop-zone で探す
-import type { DragEvent } from "react";
+import type { DragEvent, ReactNode } from "react";
 import { ErrorBand } from "../components/ErrorBand";
+import { UpdateBand } from "../components/UpdateBand";
 import { useT } from "../i18n";
 import { fileFormatLabel, formatClock, formatEstimate, formatFileSize, formatMonthDay } from "../lib/format";
 import { clearFile, pickFile, setDragOver } from "../store/file";
-import { showHistory } from "../store/history";
-import { startJob } from "../store/job";
 import { useApp } from "../store/state";
 
 function DropZone() {
@@ -51,7 +50,19 @@ function DropZone() {
   );
 }
 
-export function FileScreen() {
+/**
+ * 「＋ 新しい録音」の画面。前に文字起こしした録音は左の一覧にあるので、ここには出さない。
+ * 処理中の録音があれば、はじめると順番待ちに入る（2026-09-27 決定）
+ */
+export interface FileScreenProps {
+  /** 処理中の録音の名前（あれば、はじめると順番待ちに入る） */
+  runningName: string | null;
+  start: () => void;
+  /** 選んだファイルについての知らせ（前に文字起こしした場所のファイルが変わった など） */
+  notice?: ReactNode;
+}
+
+export function FileScreen({ runningName, start, notice }: FileScreenProps) {
   const t = useT();
   const file = useApp((s) => s.file);
   const fileError = useApp((s) => s.fileError);
@@ -62,15 +73,9 @@ export function FileScreen() {
   return (
     <div className="page-scroll">
       <div style={{ maxWidth: 820, margin: "0 auto", padding: "40px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
-        {/* 履歴への入口は、ファイルを選ぶ前に置く（2026-09-27 決定。選んだあとはそのファイルの作業をするため） */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 600 }}>{t.file.title}</h1>
-          {!file ? (
-            <button type="button" className="btn btn-mid" title={t.history.openTitle} onClick={() => void showHistory()}>
-              {t.history.open}
-            </button>
-          ) : null}
-        </div>
+        <h1 style={{ fontSize: 22, fontWeight: 600 }}>{t.objects.newTitle}</h1>
+        {/* 新しい版の知らせ（約束 版10）。ファイルを選ぶ前も後も出す（消すまで） */}
+        <UpdateBand />
 
         {!file ? (
           <>
@@ -96,6 +101,8 @@ export function FileScreen() {
                 {t.file.another}
               </button>
             </div>
+
+            {notice ?? null}
 
             {file.previous?.resultReusable ? (
               // 版6: 前回の書き起こしまでそろっている（2026-09-26 決定。仕様書に無い）
@@ -127,9 +134,15 @@ export function FileScreen() {
 
             {startError ? <ErrorBand error={startError} /> : null}
 
+            {runningName ? (
+              <div className="band-info pretty" style={{ padding: "12px 18px", fontSize: 13, lineHeight: 1.7 }}>
+                {t.objects.queueNote(runningName)}
+              </div>
+            ) : null}
+
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button type="button" className="btn btn-primary" onClick={() => void startJob()}>
-                {t.file.start}
+              <button type="button" className="btn btn-primary" onClick={start}>
+                {runningName ? t.objects.enqueue : t.file.start}
               </button>
             </div>
           </>

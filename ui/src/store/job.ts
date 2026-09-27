@@ -2,6 +2,7 @@
 import { STAGES, type JobDone, type JobFailed, type JobProgress, type Stage } from "@contract/types";
 import { api } from "../api";
 import { toAppError } from "../lib/errors";
+import { basename } from "../lib/format";
 import { stopPlayback } from "../lib/player";
 import { enterNaming } from "./naming";
 import { getState, setState, type JobView } from "./state";
@@ -71,20 +72,21 @@ export async function startJob(path?: string): Promise<void> {
   }
 }
 
+/** 途中経過の知らせを当てたときの変わり目（段階も％も戻らない）。止まった後の知らせは当てない */
+export function progressPatch(j: JobView, p: JobProgress): Partial<JobView> | null {
+  if (j.status !== "running") return null;
+  const stage = stageIndex(p.stage) >= stageIndex(j.stage) ? p.stage : j.stage;
+  const percent =
+    stage === "transcribe"
+      ? Math.max(j.percent, Math.min(100, p.stagePercent ?? 0))
+      : stageIndex(stage) > stageIndex("transcribe")
+        ? 100
+        : j.percent;
+  return { stage, percent, etaSec: p.etaSec, reused: p.reusedDiarization };
+}
+
 export function onJobProgress(p: JobProgress): void {
-  forJob(p.jobId, () =>
-    updateJob(p.jobId, (j) => {
-      if (j.status !== "running") return null;
-      const stage = stageIndex(p.stage) >= stageIndex(j.stage) ? p.stage : j.stage;
-      const percent =
-        stage === "transcribe"
-          ? Math.max(j.percent, Math.min(100, p.stagePercent ?? 0))
-          : stageIndex(stage) > stageIndex("transcribe")
-            ? 100
-            : j.percent;
-      return { stage, percent, etaSec: p.etaSec, reused: p.reusedDiarization };
-    }),
-  );
+  forJob(p.jobId, () => updateJob(p.jobId, (j) => progressPatch(j, p)));
 }
 
 export function onJobDone(d: JobDone): void {
@@ -131,16 +133,30 @@ export async function confirmCancel(): Promise<void> {
   }
 }
 
-/** やり直す（残っている話者の判定はエンジンが使い回す） */
-export function retryJob(): void {
-  const j = getState().job;
-  if (j) void startJob(j.path);
+/** 処理中に閉じるときの確かめに出すもの: 処理中の録音の名前と段階、順番待ちの数（2026-09-27 決定: 何が残り、何を破棄するかを書く） */
+export interface CloseInfo {
+  name: string;
+  stage: Stage;
+  /** 前回の聞き分けを使い回している（閉じても聞き分けは残る） */
+  reused: boolean;
+  queued: number;
 }
 
-/** ファイル選択に戻る（選んだファイルは消える） */
-export function backToFile(): void {
-  setState({ job: null, file: null, fileError: null, startError: null });
-  goTo("file");
+/** 見ている録音が処理中なら、その録音（録音が主役の画面は、見ていない処理中の録音と順番待ちも数える。setCloseInfo） */
+const viewedCloseInfo = (): CloseInfo | null => {
+  const j = getState().job;
+  return j?.status === "running" ? { name: basename(j.path), stage: j.stage, reused: j.reused, queued: 0 } : null;
+};
+
+let closeInfoOf: () => CloseInfo | null = viewedCloseInfo;
+
+export function setCloseInfo(fn: (() => CloseInfo | null) | null): void {
+  closeInfoOf = fn ?? viewedCloseInfo;
+}
+
+/** 処理中の録音（無ければ null。閉じるときに確かめない） */
+export function closeInfo(): CloseInfo | null {
+  return closeInfoOf();
 }
 
 /**
@@ -148,7 +164,7 @@ export function backToFile(): void {
  * 版8: 保存していない手直しは作業フォルダに残るので確かめない（2026-09-27 決定）。エンジンも処理中の間だけ知らせる
  */
 export function onCloseRequested(): void {
-  if (getState().job?.status === "running") setState({ dialog: "close" });
+  if (closeInfo()) setState({ dialog: "close" });
   else void confirmClose();
 }
 

@@ -1,4 +1,4 @@
-// 画面4 名前付け（UI 画面仕様書 §7）
+// 「話者」のタブ: 名前付け（UI 画面仕様書 §7）
 // 仕様書に無い「話者を決められなかった部分の名前の手がかり」（約束 版2 の getUnresolvedHints）は、
 // 話者カードの下にいつも出す（2026-09-26 決定）
 import { useMemo } from "react";
@@ -11,17 +11,8 @@ import { PlayProgress, SamplePlayButton } from "../components/PlayButton";
 import { useT } from "../i18n";
 import { labelColors } from "../lib/colors";
 import { percentText, truncate } from "../lib/format";
-import {
-  cleanName,
-  formatHintSources,
-  formatHints,
-  groupNames,
-  nameKey,
-  namingSummary,
-  namingSummarySub,
-  type NameGrouping,
-} from "../lib/names";
-import { applyNamesAndShow, selectLabel, setName, stepLabel } from "../store/naming";
+import { cleanName, formatHintSources, formatHints, groupNames, nameKey, type NameGrouping } from "../lib/names";
+import { selectLabel, setName, stepLabel } from "../store/naming";
 import { useApp } from "../store/state";
 
 /** 候補のボタン（点線）。押すと入力欄をその名前に置き換える */
@@ -307,15 +298,17 @@ function UnresolvedHints({
   );
 }
 
+/**
+ * 録音が主役の画面の「話者」のタブの中。題は録音の上の段にあり、下の帯は保存だけ（「話者」「文字起こし」はタブで切り替え、
+ * 名前を付けなくても保存できる。2026-09-27 決定）
+ */
 export function NamingScreen() {
   const t = useT();
   const speakers = useApp((s) => s.speakers);
   const hints = useApp((s) => s.hints);
   const names = useApp((s) => s.names);
   const selectedState = useApp((s) => s.selectedLabel);
-  const applying = useApp((s) => s.applying);
   const applyError = useApp((s) => s.applyError);
-  const reached = useApp((s) => s.reachedResult);
   const durationSec = useApp((s) => s.file?.durationSec ?? s.view?.durationSec ?? 0);
 
   const order = useMemo(() => speakers.map((c) => c.label), [speakers]);
@@ -326,9 +319,17 @@ export function NamingScreen() {
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: "none", padding: "24px 32px 18px", borderBottom: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 6 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600 }}>{t.naming.title}</h1>
-        <p className="pretty" style={{ fontSize: 14, color: "var(--ink-3)", lineHeight: 1.7 }}>
+      <div
+        style={{
+          flex: "none",
+          padding: "12px 32px",
+          borderBottom: "1px solid var(--line)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+        }}
+      >
+        <p className="pretty" style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.7 }}>
           {t.naming.lead}
         </p>
       </div>
@@ -359,26 +360,6 @@ export function NamingScreen() {
         </div>
       ) : null}
 
-      <div
-        style={{
-          flex: "none",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 20,
-          padding: "14px 32px",
-          borderTop: "1px solid var(--line)",
-          background: "var(--bg-bar)",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>{namingSummary(order, grouping)}</span>
-          <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{namingSummarySub(grouping)}</span>
-        </div>
-        <button type="button" className="btn btn-primary" disabled={applying} onClick={() => void applyNamesAndShow()}>
-          {applying ? t.naming.applying : reached ? t.naming.backToResult : t.naming.showResult}
-        </button>
-      </div>
     </div>
   );
 }

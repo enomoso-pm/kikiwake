@@ -154,76 +154,6 @@ textarea::placeholder {
   overflow: auto;
 }
 
-/* ---- 工程バー（§2.2） ---------------------------------------------------- */
-
-.stepbar {
-  height: 52px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  padding: 0 32px;
-  background: var(--bg-bar);
-  border-bottom: 1px solid var(--line);
-}
-
-.step {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  margin: 0 -8px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  cursor: default;
-  font: inherit;
-}
-
-.step.nav {
-  background: var(--accent-nav);
-  cursor: pointer;
-}
-
-.step-num {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-  background: var(--bg-chip);
-  color: var(--ink-4);
-}
-
-.step-name {
-  font-size: 13px;
-  white-space: nowrap;
-  color: var(--ink-4);
-}
-
-.step.current .step-num {
-  background: var(--accent);
-  color: #fff;
-}
-
-.step.current .step-name {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.step.done .step-num {
-  background: #cfdbe7;
-  color: var(--accent-soft-ink);
-}
-
-.step.done .step-name {
-  color: var(--ink-2);
-}
-
 /* ---- ボタン（§2.4） ------------------------------------------------------ */
 
 .btn {
@@ -579,7 +509,7 @@ textarea::placeholder {
   background: var(--bg-muted);
 }
 
-/* 表示の言語の切り替え（2026-09-27）。工程バー（高さ 52px・右の余白 32px）の右端に、窓に対して重ねて置く。
+/* 表示の言語の切り替え（2026-09-27）。右の一番上の帯（高さ 52px・右の余白 32px）の右端に、窓に対して重ねて置く。
    ダイアログ・詳細・名前の選択（z-index 30 以上）の下になる */
 .lang-switch {
   position: fixed;

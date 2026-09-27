@@ -1,7 +1,7 @@
 {
   "name": "kikiwake-ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Kikiwake（聞き分け）の画面。React＋TypeScript＋Vite。受け渡しの約束は ../contract",
   "type": "module",
   "scripts": {

@@ -18,7 +18,7 @@ use crate::job::{default_out_dir, identify, Engine, JobDir};
 use crate::paths::Paths;
 use crate::results::names_of;
 use crate::tidy::{self, is_job_id, last_used, remove, size_of};
-use crate::types::{HistoryItem, HistoryOpened, HistoryStatus, JobDone};
+use crate::types::{HistoryItem, HistoryOpened, HistoryStatus, JobDone, NamedSpeakers, SourceState};
 
 // ---- 閉じたときの状態（約束 版8 の JobDraft） --------------------------------------------------
 
@@ -65,9 +65,75 @@ fn finished(job: &JobDir) -> bool {
         && ["view_transcript.json", "words.json", "diarization.json", "meta.json", "speakers.json"].iter().all(|f| job.file(f).is_file())
 }
 
-/// 元ファイルが今もあるか（同じ場所・大きさ・更新日時。つまり同じ ID になるか）
-fn source_available(job: &JobDir) -> bool {
-    job.source().ok().and_then(|s| identify(Path::new(&s.path)).ok()).is_some_and(|(id, _)| id == job.id)
+/// 元ファイルの状態（版9）。同じ場所・大きさ・更新日時のファイルがある（つまり同じ ID になる）なら ok、
+/// 場所にファイルが無ければ missing、あるが大きさか更新日時が違えば changed（編集した・書き出し直した・コピーし直した・クラウドの同期）
+pub(crate) fn source_state(job: &JobDir) -> SourceState {
+    let Ok(src) = job.source() else { return SourceState::Missing };
+    let path = Path::new(&src.path);
+    if !path.is_file() {
+        return SourceState::Missing;
+    }
+    match identify(path) {
+        Ok((id, _)) if id == job.id => SourceState::Ok,
+        Ok(_) => SourceState::Changed,
+        Err(_) => SourceState::Missing,
+    }
+}
+
+/// 行の再生に使う音声（audio.wav）を用意する。無ければ元ファイルから取り出す（68 分の録音で 1.2 秒）。
+/// 元ファイルが無い・変わった・取り出せないときは false（書き起こしは読めるが、行の再生はできない）
+pub(crate) fn ensure_audio(engine: &Engine, job: &JobDir) -> bool {
+    let _one = engine.audio_lock.lock().unwrap_or_else(|e| e.into_inner());
+    if job.audio().is_file() {
+        return true;
+    }
+    if source_state(job) != SourceState::Ok {
+        return false;
+    }
+    let Ok(src) = job.source() else { return false };
+    let tmp = job.file("audio.part.wav");
+    let cancel = crate::proc::Cancel::new();
+    match engines::decode(&engine.paths, Path::new(&src.path), &tmp, &cancel)
+        .and_then(|_| fs::rename(&tmp, job.audio()).map_err(|e| io_error(&e, "audio.wav")))
+    {
+        Ok(()) => {
+            crate::log::write(&engine.paths, &format!("job {} 行の再生のために音声を取り出した", job.id));
+            true
+        }
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            crate::log::write(&engine.paths, &format!("job {} 音声を取り出せない {e}", job.id));
+            false
+        }
+    }
+}
+
+/// 文字起こしをファイルに保存したことがあるか（版9）。閉じたときの状態の savedOnce（前の版の状態は savedFiles）で見る。
+/// 保存したことは書き起こしが変わっても変わらないので、書き起こしの指紋は見ない
+fn saved_once(job: &JobDir) -> bool {
+    let Some(v) = fs::read_to_string(job.file(DRAFT_FILE)).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) else {
+        return false;
+    };
+    let Some(d) = v.get("draft") else { return false };
+    d.get("savedOnce").and_then(|b| b.as_bool()) == Some(true)
+        || d.get("savedFiles").and_then(|f| f.as_array()).is_some_and(|a| !a.is_empty())
+}
+
+/// 付けた名前（版9）。同じ名前を付けた話者は1人にまとめ、発言の多い順（保存するファイルの発言時間と同じ数え方）。
+/// 名前を確定していなければ None
+fn named_speakers(job: &JobDir) -> Option<NamedSpeakers> {
+    let names = names_of(job)?;
+    let named: std::collections::HashSet<&str> = names.values().map(String::as_str).filter(|v| !v.trim().is_empty()).collect();
+    let turns: Vec<kikiwake_core::merge::Turn> = kikiwake_core::merge::load_json(&job.diarization()).ok()?;
+    let mut out = NamedSpeakers { names: Vec::new(), unnamed: 0 };
+    for (who, _) in kikiwake_core::merge::talk_time(&turns, Some(&names)) {
+        if named.contains(who.as_str()) {
+            out.names.push(who);
+        } else {
+            out.unnamed += 1;
+        }
+    }
+    (!out.names.is_empty()).then_some(out)
 }
 
 /// 最後に使った日時（処理・名前の確定・手直しのどれか）。一覧の並びに使う
@@ -106,6 +172,7 @@ pub fn list_history(engine: &Engine) -> Vec<HistoryItem> {
         let done = finished(&job);
         let unsaved = load_draft(&job).is_some_and(|d| d.get("unsaved").and_then(|u| u.as_bool()) == Some(true));
         let name = Path::new(&src.path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let state = source_state(&job);
         let item = HistoryItem {
             job_id: id,
             name,
@@ -116,8 +183,11 @@ pub fn list_history(engine: &Engine) -> Vec<HistoryItem> {
             speakers: count_speakers(&job),
             named: names_of(&job).is_some(),
             unsaved_edits: done && unsaved,
-            source_available: source_available(&job),
+            source_available: state == SourceState::Ok,
             diarization_kept: job.diarization().is_file(),
+            source_state: state,
+            saved: done && saved_once(&job),
+            named_speakers: named_speakers(&job),
         };
         items.push((last_touched(&job), item));
     }
@@ -144,26 +214,16 @@ pub fn open_history(engine: &Engine, job_id: &str) -> Result<HistoryOpened, AppE
         return Err(AppError::engine_failed().with_detail(format!("まだ書き終えていない録音: {job_id}")));
     }
     let src = job.source()?;
-    // 別の録音を使い終えた（取り出した音声と切り抜きを消す。tidy.rs）
-    let t = tidy::tidy_jobs(&engine.paths, Some(job_id));
+    engine.set_viewing(job_id);
+    // 別の録音を使い終えた（取り出した音声と切り抜きを消す。tidy.rs）。処理中の録音には触らない
+    // （処理中にほかの録音を開ける形にしたため。前は処理中の録音の取り出した音声まで消していた）
+    let running = engine.running_id();
+    let keep: Vec<&str> = [Some(job_id), running.as_deref()].into_iter().flatten().collect();
+    let t = tidy::tidy_jobs(&engine.paths, &keep);
     if !t.is_empty() {
         crate::log::write(&engine.paths, &tidy::describe(&t));
     }
-    let mut available = source_available(&job);
-    if available && !job.audio().is_file() {
-        let tmp = job.file("audio.part.wav");
-        let cancel = crate::proc::Cancel::new();
-        match engines::decode(&engine.paths, Path::new(&src.path), &tmp, &cancel).and_then(|_| {
-            fs::rename(&tmp, job.audio()).map_err(|e| io_error(&e, "audio.wav"))
-        }) {
-            Ok(()) => crate::log::write(&engine.paths, &format!("job {job_id} 履歴から開いた（音声を取り出した）")),
-            Err(e) => {
-                let _ = fs::remove_file(&tmp);
-                crate::log::write(&engine.paths, &format!("job {job_id} 履歴から開いた・音声を取り出せない {e}"));
-                available = false;
-            }
-        }
-    }
+    let available = source_state(&job) == SourceState::Ok && ensure_audio(engine, &job);
     let view: serde_json::Value = kikiwake_core::merge::load_json(&job.file("view_transcript.json")).map_err(|e| io_error(&e, "view_transcript.json"))?;
     let unresolved_count = view.get("unresolved").and_then(|u| u.as_array()).map(Vec::len).unwrap_or(0);
     Ok(HistoryOpened {
@@ -527,6 +587,75 @@ mod tests {
         assert!(!paths.jobs().join(&id).exists());
         assert!(rec.is_file() && saved.is_file() && other.is_file());
         assert!(list_history(&engine).is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn opening_another_recording_keeps_the_running_one_intact() {
+        // 処理中にほかの録音を開いても、処理中の録音の取り出した音声（取り出し途中を含む）と切り抜きは消さない
+        // （2026-09-27。案A で処理中にほかの録音を開けるようにした。前は消していて、処理が最後まで進まなかった）
+        let root = tmp("open-running");
+        let mut paths = paths_in(&root);
+        paths.legacy_work = None;
+        let engine = Engine::new(paths.clone(), std::sync::Arc::new(NoEvents));
+        let jobs = paths.jobs();
+        finished_job(&jobs.join("aaaa"), "/nowhere/定例.m4a", 5);
+        let run = jobs.join("bbbb");
+        fs::create_dir_all(run.join("clips")).unwrap();
+        for f in ["audio.wav", "audio.part.wav", "clips/1_2.wav"] {
+            fs::write(run.join(f), b"x").unwrap();
+        }
+        write_source(&run, "/nowhere/面談.mp4", 10, "running", 1);
+        // 使い終えた録音（処理中でも、開いてもいない）の音声は消す
+        let old = jobs.join("cccc");
+        finished_job(&old, "/nowhere/古い.m4a", 60);
+        fs::write(old.join("audio.wav"), b"x").unwrap();
+        let running = engine.fake_running("bbbb", false);
+        open_history(&engine, "aaaa").unwrap();
+        assert!(run.join("audio.wav").is_file() && run.join("audio.part.wav").is_file() && run.join("clips/1_2.wav").is_file());
+        assert!(!old.join("audio.wav").exists());
+        assert_eq!(engine.viewing_id().as_deref(), Some("aaaa"));
+        // 処理中の録音は一覧に出さない・消させない
+        assert!(list_history(&engine).iter().all(|i| i.job_id != "bbbb"));
+        assert!(delete_history(&engine, "bbbb").is_err());
+        drop(running);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn tells_missing_from_changed_and_lists_names_by_talk_time() {
+        // 版9: 元ファイルの状態（ある・見つからない・変わった）・保存したことがあるか・付けた名前（発言の多い順）
+        let root = tmp("state");
+        let mut paths = paths_in(&root);
+        paths.legacy_work = None;
+        let engine = Engine::new(paths.clone(), std::sync::Arc::new(NoEvents));
+        let rec = root.join("録音/定例.m4a");
+        fs::create_dir_all(rec.parent().unwrap()).unwrap();
+        fs::write(&rec, b"0123456789").unwrap();
+        let (id, _) = identify(&rec).unwrap();
+        let dir = paths.jobs().join(&id);
+        finished_job(&dir, &rec.display().to_string(), 1);
+        // 話者A 10 秒・話者B 30 秒・話者C 5 秒・話者D 25 秒。A と D に同じ名前 → 松本 35 秒・田中 30 秒・名前なし 1 人
+        let turns = r#"[{"start":0.0,"end":10.0,"speaker":"s0"},{"start":10.0,"end":40.0,"speaker":"s1"},{"start":40.0,"end":45.0,"speaker":"s2"},{"start":45.0,"end":70.0,"speaker":"s3"}]"#;
+        fs::write(dir.join("diarization.json"), turns).unwrap();
+        let item = |engine: &Engine| list_history(engine).into_iter().find(|i| i.job_id == id).unwrap();
+        let first = item(&engine);
+        assert_eq!((first.source_state, first.source_available, first.saved), (SourceState::Ok, true, false));
+        assert_eq!(first.named_speakers, None);
+        fs::write(dir.join("names.json"), r#"{"話者A":"松本","話者B":"田中","話者D":"松本"}"#).unwrap();
+        assert_eq!(item(&engine).named_speakers, Some(NamedSpeakers { names: vec!["松本".into(), "田中".into()], unnamed: 1 }));
+        // 保存したことがある（閉じたときの状態の savedOnce。前の版の状態は savedFiles で）
+        save_draft(&engine, &id, &serde_json::json!({"screen": "result", "unsaved": true, "savedOnce": true})).unwrap();
+        assert!(item(&engine).saved);
+        save_draft(&engine, &id, &serde_json::json!({"screen": "result", "unsaved": false, "savedFiles": ["/x/transcript_named.md"]})).unwrap();
+        assert!(item(&engine).saved);
+        // 同じ場所にあるが中身（大きさか更新日時）が変わった → changed。無くなった → missing
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(&rec, b"9876543210").unwrap();
+        assert_eq!(item(&engine).source_state, SourceState::Changed);
+        assert!(!item(&engine).source_available);
+        fs::remove_file(&rec).unwrap();
+        assert_eq!(item(&engine).source_state, SourceState::Missing);
         let _ = fs::remove_dir_all(&root);
     }
 

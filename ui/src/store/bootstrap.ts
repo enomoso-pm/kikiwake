@@ -6,6 +6,7 @@ import { onCloseRequested, onJobDone, onJobFailed, onJobProgress } from "./job";
 import { watchDraft } from "./draft";
 import { allModelsReady, loadSetup, onModelProgress } from "./setup";
 import { getState, setState } from "./state";
+import { checkForUpdate } from "./update";
 
 let started = false;
 
@@ -27,6 +28,8 @@ export async function bootstrap(): Promise<void> {
   // 2回目以降の起動: AI モデルがそろい、動作条件に error が無ければ、ファイル選択から（§13 Q1 の仮の扱い）
   const skipSetup = allModelsReady(s.models) && Boolean(s.env?.canRun);
   setState({ booted: true, screen: skipSetup ? "file" : "setup" });
+  // 新しい版があるか（約束 版10。一度だけ。答えを待たずに画面を出す）
+  void checkForUpdate();
 }
 
 /**

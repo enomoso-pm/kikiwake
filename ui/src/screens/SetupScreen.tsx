@@ -1,16 +1,12 @@
 // 画面1 準備（UI 画面仕様書 §4）
+import { useState } from "react";
 import type { EnvironmentCheck, EnvironmentItem, ModelInfo } from "@contract/types";
 import { Bar } from "../components/Bar";
 import { ErrorBand } from "../components/ErrorBand";
 import { useT, type Messages } from "../i18n";
 import { formatModelSize, formatProgressBytes } from "../lib/format";
-import {
-  allModelsReady,
-  isDownloading,
-  leaveSetup,
-  pauseDownload,
-  startDownload,
-} from "../store/setup";
+import { allModelsReady, isDownloading, leaveSetup, loadSetup, pauseDownload, startDownload } from "../store/setup";
+import { setUpdateCheck } from "../store/update";
 import { useApp } from "../store/state";
 
 const LEVEL: Record<EnvironmentItem["level"], { ink: string; bg: string; message: string }> = {
@@ -70,11 +66,44 @@ function modelStatus(t: Messages, m: ModelInfo): { text: string; color: string; 
   }
 }
 
-export function SetupScreen() {
+/** 「起動したときに新しい版を確かめる」（外すと、起動しても GitHub に尋ねない） */
+function UpdateSetting() {
   const t = useT();
+  const on = useApp((s) => s.updateCheck);
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <h2 style={{ fontSize: 15, fontWeight: 600 }}>{t.update.settingTitle}</h2>
+      <div className="card" style={{ display: "flex", flexDirection: "column", gap: 8, padding: "16px 18px" }}>
+        <button
+          type="button"
+          className={`check-chip${on ? " on" : ""}`}
+          aria-pressed={on}
+          data-update-setting=""
+          onClick={() => setUpdateCheck(!on)}
+          style={{ alignSelf: "flex-start", padding: "6px 10px", color: "var(--ink)" }}
+        >
+          <span className="check-box">{on ? "✓" : ""}</span>
+          {t.update.settingLabel}
+        </button>
+        <span className="pretty" style={{ fontSize: 13, lineHeight: 1.7, color: "var(--ink-3)" }}>
+          {t.update.settingNote}
+        </span>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * variant "review": AI モデルがそろったあとに、一覧の下の「AI モデルと動作条件」から見返すとき（2026-09-27）。
+ * 題と説明を見返し用にし、「次へ」は出さない。足りないモデルがあるときだけダウンロードのボタンを出し、「もう一度確かめる」を置く
+ */
+export function SetupScreen({ variant }: { variant?: "review" } = {}) {
+  const t = useT();
+  const review = variant === "review";
   const env = useApp((s) => s.env);
   const models = useApp((s) => s.models);
   const setupError = useApp((s) => s.setupError);
+  const [checking, setChecking] = useState(false);
 
   const blocked = !env || !env.canRun || env.checks.some((c) => c.level === "error");
   const busy = isDownloading(models);
@@ -84,20 +113,26 @@ export function SetupScreen() {
   const total = models.reduce((a, m) => a + m.sizeBytes, 0);
   const remaining = models.filter((m) => m.state !== "ready").reduce((a, m) => a + m.sizeBytes, 0);
 
-  let primary: { label: string; onClick?: () => void };
-  if (allReady) primary = { label: t.setup.next, onClick: leaveSetup };
-  else if (busy) primary = { label: t.setup.next };
+  let primary: { label: string; onClick?: () => void } | null;
+  if (allReady) primary = review ? null : { label: t.setup.next, onClick: leaveSetup };
+  else if (busy) primary = review ? null : { label: t.setup.next };
   else if (resumable) primary = { label: t.setup.resume, onClick: () => void startDownload() };
   else primary = { label: t.setup.download(formatModelSize(remaining)), onClick: () => void startDownload() };
-  const primaryDisabled = blocked || !primary.onClick;
+  const primaryDisabled = blocked || !primary?.onClick;
+
+  const recheck = async () => {
+    setChecking(true);
+    await loadSetup();
+    setChecking(false);
+  };
 
   return (
     <div className="page-scroll">
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "40px 32px 40px", display: "flex", flexDirection: "column", gap: 28 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 600 }}>{t.setup.title}</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 600 }}>{review ? t.setup.reviewTitle : t.setup.title}</h1>
           <p className="pretty" style={{ fontSize: 14, color: "var(--ink-3)", lineHeight: 1.75 }}>
-            {t.setup.lead}
+            {review ? t.setup.reviewLead : t.setup.lead}
           </p>
         </div>
 
@@ -159,10 +194,12 @@ export function SetupScreen() {
 
         <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <h2 style={{ fontSize: 15, fontWeight: 600 }}>{t.setup.modelsTitle}</h2>
-            <p className="pretty" style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.7 }}>
-              {t.setup.modelsLead(formatModelSize(total))}
-            </p>
+            <h2 style={{ fontSize: 15, fontWeight: 600 }}>{review ? t.setup.reviewModelsTitle : t.setup.modelsTitle}</h2>
+            {review && allReady ? null : (
+              <p className="pretty" style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.7 }}>
+                {t.setup.modelsLead(formatModelSize(total))}
+              </p>
+            )}
           </div>
           <div className="card">
             {models.map((m, i) => {
@@ -195,15 +232,25 @@ export function SetupScreen() {
           </div>
         </section>
 
+        {/* 新しい版の確認（約束 版10）: そろったあとの見返しにだけ置く（2026-09-27 決定: 設定を置く・初めは確かめる） */}
+        {review ? <UpdateSetting /> : null}
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 4 }}>
+          {review && !busy ? (
+            <button type="button" className="btn btn-secondary" disabled={checking} onClick={() => void recheck()}>
+              {checking ? t.setup.checking : t.setup.recheck}
+            </button>
+          ) : null}
           {busy ? (
             <button type="button" className="btn btn-secondary" disabled={verifying} onClick={() => void pauseDownload()}>
               {t.setup.pause}
             </button>
           ) : null}
-          <button type="button" className="btn btn-primary" disabled={primaryDisabled} onClick={primary.onClick}>
-            {primary.label}
-          </button>
+          {primary ? (
+            <button type="button" className="btn btn-primary" disabled={primaryDisabled} onClick={primary.onClick}>
+              {primary.label}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

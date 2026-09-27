@@ -2,7 +2,9 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { mockDev } from "../api";
 import type { MockNotice, MockScenario } from "../api/mock";
+import { demoQueue, devSetSource } from "../objects/store";
 import { devJump, reloadEnvironment, setDevNames } from "../store/dev";
+import { checkForUpdate } from "../store/update";
 import { useApp, type Screen } from "../store/state";
 
 const DEV_BORDER = "1px dashed #9a9ea4";
@@ -41,11 +43,10 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 
 const SCREEN_OPTIONS: Array<[Screen, string]> = [
   ["setup", "準備"],
-  ["file", "1 ファイル"],
-  ["processing", "2 処理"],
-  ["naming", "3 名前付け"],
-  ["result", "4 結果"],
-  ["done", "完了"],
+  ["file", "新しい録音"],
+  ["processing", "文字起こし中"],
+  ["naming", "話者のタブ"],
+  ["result", "文字起こしのタブ"],
 ];
 
 export default function DevPanel() {
@@ -67,6 +68,11 @@ export default function DevPanel() {
 
   if (!dev || !sc) return null;
   const set = (patch: Partial<MockScenario>) => dev.setScenario(patch);
+  /** 新しい版の答えを変えて、もう一度尋ねる（製品は起動したときに一度だけ） */
+  const setUpdate = async (update: MockScenario["update"]) => {
+    set({ update });
+    await checkForUpdate();
+  };
   const atLeast = (s: Screen) => ["processing", "naming", "result"].indexOf(screen) >= ["processing", "naming", "result"].indexOf(s);
 
   const panel: CSSProperties = {
@@ -125,6 +131,26 @@ export default function DevPanel() {
               アプリの外側（見本のときだけ）。見本データは contract/fixtures の合成会議（架空の4人）
             </span>
           </div>
+
+          <Group title="案A: 開いている録音の元のファイル">
+            {(
+              [
+                ["ok", "ある"],
+                ["missing", "見つからない"],
+                ["changed-same", "変わった（長さは同じ）"],
+                ["changed-diff", "変わった（切った）"],
+              ] as const
+            ).map(([k, label]) => (
+              <Option key={k} label={label} onClick={() => void devSetSource(k)} />
+            ))}
+          </Group>
+          <Group title="案A: 保存したファイル">
+            <Option label="ある" active={!sc.savedMissing} onClick={() => set({ savedMissing: false })} />
+            <Option label="見つからない（移した・消した）" active={sc.savedMissing} onClick={() => set({ savedMissing: true })} />
+          </Group>
+          <Group title="案A: 順番待ち">
+            <Option label="処理中と順番待ち2件を作る（1件約20秒）" onClick={() => void demoQueue(dev.demoPaths())} />
+          </Group>
 
           <Group title="画面">
             {SCREEN_OPTIONS.map(([s, label]) => (
@@ -191,6 +217,11 @@ export default function DevPanel() {
           <Group title="処理の再生速度">
             <Option label="60倍" active={sc.speed === 60} onClick={() => set({ speed: 60 })} />
             <Option label="600倍" active={sc.speed === 600} onClick={() => set({ speed: 600 })} />
+          </Group>
+
+          <Group title="新しい版の知らせ（約束 版10）">
+            <Option label="なし" active={sc.update === "none"} onClick={() => void setUpdate("none")} />
+            <Option label="あり（1.0.1）" active={sc.update === "available"} onClick={() => void setUpdate("available")} />
           </Group>
 
           <Group title="窓を閉じる（約束 版5）">

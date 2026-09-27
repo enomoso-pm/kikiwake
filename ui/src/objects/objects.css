@@ -1,0 +1,448 @@
+/* 録音が主役の画面（案A。2026-09-27 に製品の画面にした）の見た目。
+   色・文字の大きさは今の画面と同じもの（styles/app.css の変数）だけを使う */
+
+.objects-app {
+  flex-direction: row;
+}
+
+/* ---- 左の一覧 ------------------------------------------------------------ */
+
+.objects-sidebar {
+  width: 256px;
+  box-sizing: border-box;
+  flex: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #f2f2ef;
+  border-right: 1px solid var(--line);
+}
+
+.objects-sidebar.overlay {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 36;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+.objects-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: var(--scrim);
+}
+
+.objects-side-head {
+  height: 52px;
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.objects-brand {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.objects-new {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 10px 4px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-input);
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.objects-new:hover {
+  border-color: var(--ink-4);
+}
+
+.objects-new.selected {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+  color: var(--accent-soft-ink);
+}
+
+.objects-section {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 14px 20px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-4);
+}
+
+.objects-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px 10px;
+}
+
+.objects-empty {
+  padding: 6px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
+.objects-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 12px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.objects-item:hover {
+  background: #e9e9e5;
+}
+
+.objects-item.selected {
+  background: var(--accent-soft);
+}
+
+.objects-item-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.objects-item-name {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* 見ていない間に文字起こしが終わり、まだ開いていない録音の印 */
+.objects-fresh {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.objects-item-meta {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.objects-item-warn {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--warn-ink);
+}
+
+.objects-chip {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 1px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.objects-chip.accent {
+  background: #d9e4f0;
+  color: var(--accent-soft-ink);
+}
+
+.objects-chip.muted {
+  background: var(--bg-chip);
+  color: var(--ink-2);
+}
+
+.objects-chip.warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+
+.objects-chip.ok {
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+}
+
+.objects-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-track);
+  overflow: hidden;
+}
+
+.objects-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.objects-side-foot {
+  flex: none;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.objects-foot-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.objects-foot-btn:hover {
+  background: #e9e9e5;
+}
+
+.objects-foot-btn.selected {
+  background: var(--accent-soft);
+  color: var(--accent-soft-ink);
+}
+
+/* ---- 右の中身 ------------------------------------------------------------ */
+
+.objects-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.objects-toolbar {
+  height: 52px;
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 150px 0 28px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--line);
+}
+
+.objects-toolbar.dev {
+  padding-right: 340px;
+}
+
+.objects-toolbar.with-toggle {
+  padding-left: 12px;
+}
+
+.objects-toolbar .objects-chip {
+  align-self: center;
+  flex: none;
+}
+
+.objects-title {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.objects-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 28px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.objects-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* タブと操作の段。高さを決めておき、出すボタン（詳細の有無など）で上の段の高さが変わらないようにする */
+.objects-head-row {
+  height: 38px;
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.objects-tabs {
+  display: flex;
+  gap: 22px;
+}
+
+.objects-tab {
+  margin-bottom: -1px;
+  padding: 6px 2px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink-3);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.objects-tab.current {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.objects-tab:disabled {
+  color: var(--placeholder);
+  cursor: default;
+}
+
+.objects-actions {
+  position: relative;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -3px;
+}
+
+.objects-menu {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+}
+
+.objects-menu button {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.objects-menu button:hover {
+  background: var(--accent-hover2);
+}
+
+.objects-menu button.danger {
+  color: var(--err-btn);
+}
+
+.objects-icon-btn {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.objects-icon-btn:hover {
+  background: var(--bg-muted);
+}
+
+/* はじめの準備（AI モデルがそろう前）の上の帯。一覧・タブは出さない */
+.objects-bare-bar {
+  height: 52px;
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 32px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--line);
+}
+
+/* ファイルをドラッグしている間の案内（窓全体。落とす知らせは窓が受けるので、ここは押せないようにする） */
+.objects-drop {
+  position: fixed;
+  inset: 0;
+  z-index: 34;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 248, 251, 0.88);
+}
+
+.objects-drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 56px;
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.objects-drop-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.objects-drop-sub {
+  font-size: 13px;
+  color: var(--ink-3);
+}

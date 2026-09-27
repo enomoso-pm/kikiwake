@@ -73,4 +73,8 @@ export const tauriApi: KikiwakeApi = {
   deleteHistory: (jobId) => invoke("delete_history", { jobId }),
   relinkSource: (jobId, path) => invoke("relink_source", { jobId, path }),
   saveDraft: (jobId, draft) => invoke("save_draft", { jobId, draft }),
+
+  // ---- 版10: 新しい版の知らせ（エンジンが GitHub に尋ねる。画面は通信しない） ----
+  checkUpdate: () => invoke("check_update"),
+  openReleasePage: (version) => invoke("open_release_page", { version }),
 };

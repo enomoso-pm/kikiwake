@@ -2,7 +2,7 @@
 // 変わるたびにすぐ書く（書いている間にまた変わったら、書き終えてからもう一度）。閉じる前の確かめはしないので、待たずに書く
 import { api } from "../api";
 import { draftOf } from "../lib/draft";
-import { hasUnsavedEdits } from "./result";
+import { changedSinceSave } from "./result";
 import { useApp, type AppState } from "./state";
 
 let writing = false;
@@ -37,6 +37,7 @@ function changed(s: AppState, p: AppState): boolean {
     s.formats !== p.formats ||
     s.outDir !== p.outDir ||
     s.saved !== p.saved ||
+    s.savedOnce !== p.savedOnce ||
     s.savedEdits !== p.savedEdits ||
     s.appliedNames !== p.appliedNames ||
     s.view !== p.view
@@ -47,7 +48,7 @@ export function watchDraft(): void {
   useApp.subscribe((s, prev) => {
     if (!changed(s, prev)) return;
     const jobId = s.job?.jobId;
-    const draft = draftOf(s, hasUnsavedEdits(s));
+    const draft = draftOf(s, changedSinceSave(s));
     if (!jobId || !draft) return;
     const body = JSON.stringify(draft);
     if (`${jobId}\n${body}` === last || (pending?.jobId === jobId && pending.body === body)) return;

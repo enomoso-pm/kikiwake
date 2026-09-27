@@ -1,55 +1,23 @@
 import { Suspense, lazy } from "react";
 import { mockDev } from "./api";
-import { Dialogs } from "./components/Dialogs";
-import { LanguageSwitch } from "./components/LanguageSwitch";
-import { StepBar } from "./components/StepBar";
-import { Toast } from "./components/Toast";
-import { DoneScreen } from "./screens/DoneScreen";
-import { FileScreen } from "./screens/FileScreen";
-import { HistoryScreen } from "./screens/HistoryScreen";
-import { NamingScreen } from "./screens/NamingScreen";
-import { ProcessingScreen } from "./screens/ProcessingScreen";
-import { ResultScreen } from "./screens/ResultScreen";
-import { SetupScreen } from "./screens/SetupScreen";
-import { useApp, type Screen } from "./store/state";
+import ObjectsApp from "./objects/ObjectsApp";
 
 // 開発用の切替パネルは見本のときだけ（製品のビルドには入らない）
 const DevPanel = import.meta.env.DEV ? lazy(() => import("./dev/DevPanel")) : null;
 
-function CurrentScreen({ screen }: { screen: Screen }) {
-  switch (screen) {
-    case "setup":
-      return <SetupScreen />;
-    case "file":
-      return <FileScreen />;
-    case "history":
-      return <HistoryScreen />;
-    case "processing":
-      return <ProcessingScreen />;
-    case "naming":
-      return <NamingScreen />;
-    case "result":
-      return <ResultScreen />;
-    case "done":
-      return <DoneScreen />;
-  }
-}
-
+/**
+ * 画面は録音が主役の形（左に録音の一覧・右に選んだ録音。2026-09-27 に製品の画面にした）。
+ * 前の形（工程バー・履歴の画面・完了の画面）は、アプリの中で通したあとに消した（2026-09-27 決定）
+ */
 export function App() {
-  const booted = useApp((s) => s.booted);
-  const screen = useApp((s) => s.screen);
   return (
-    <div className="app">
-      <StepBar />
-      <LanguageSwitch />
-      <main className="app-body">{booted ? <CurrentScreen screen={screen} /> : null}</main>
-      <Dialogs />
-      <Toast />
+    <>
+      <ObjectsApp />
       {DevPanel && mockDev ? (
         <Suspense fallback={null}>
           <DevPanel />
         </Suspense>
       ) : null}
-    </div>
+    </>
   );
 }

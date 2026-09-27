@@ -3,7 +3,6 @@ import { api, mockDev } from "../api";
 import { stopPlayback } from "../lib/player";
 import { inspectPath } from "./file";
 import { startJob } from "./job";
-import { finish } from "./leave";
 import { applyNamesAndShow } from "./naming";
 import { loadSetup } from "./setup";
 import { getState, setState, waitFor, type Screen } from "./state";
@@ -51,11 +50,6 @@ export async function devJump(screen: Screen): Promise<void> {
         if (Object.values(s.names).every((v) => !v.trim())) setState({ names: mockDev.demoNames() });
         await applyNamesAndShow();
       }
-      return;
-    case "done":
-      // 結果の画面から「完了」（保存していない形。保存した形は、結果の画面で保存してから「完了」を押す）
-      await devJump("result");
-      if (getState().screen === "result") finish();
       return;
   }
 }

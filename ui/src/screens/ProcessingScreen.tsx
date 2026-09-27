@@ -1,10 +1,10 @@
-// 画面3 処理中（UI 画面仕様書 §6）
+// 処理中の録音を開いたときの中身（UI 画面仕様書 §6）
 import { useEffect, useState } from "react";
 import { STAGES, type Stage } from "@contract/types";
 import { Bar, IndeterminateBar } from "../components/Bar";
 import { useT, type Messages } from "../i18n";
-import { basename, formatClock, formatRemaining } from "../lib/format";
-import { backToFile, requestCancel, retryJob } from "../store/job";
+import { formatClock, formatRemaining } from "../lib/format";
+import { requestCancel } from "../store/job";
 import { useApp, type JobView } from "../store/state";
 import { copyErrorDetail } from "../store/ui";
 
@@ -57,10 +57,13 @@ function remainingText(t: Messages, job: JobView): string {
   return t.processing.calculating;
 }
 
-export function ProcessingScreen() {
+/**
+ * 録音が主役の画面で、処理中の録音を開いたときの中身。録音の名前は上の段にあり、戻る先は左の一覧なので「ファイル選択に戻る」は出さない。
+ * onRetry（「再開する」）は、ほかの録音を処理していれば順番待ちに入れる（2026-09-27 決定）
+ */
+export function ProcessingScreen({ onRetry }: { onRetry: () => void }) {
   const t = useT();
   const job = useApp((s) => s.job);
-  const fileName = useApp((s) => s.file?.name);
   const now = useNow(job?.status === "running");
   if (!job) return null;
 
@@ -74,10 +77,8 @@ export function ProcessingScreen() {
   return (
     <div className="page-scroll">
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "48px 32px", display: "flex", flexDirection: "column", gap: 26 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 13, color: "var(--ink-3)", overflowWrap: "anywhere" }}>{fileName ?? basename(job.path)}</span>
-          <h1 style={{ fontSize: 22, fontWeight: 600 }}>{t.processing.title[job.status]}</h1>
-        </div>
+        {/* 録音の名前は上の段にあり、処理中の「文字起こし中」は上の帯の印と重なるので出さない（止まった・終わったときは題を出す） */}
+        {running ? null : <h1 style={{ fontSize: 22, fontWeight: 600 }}>{t.processing.title[job.status]}</h1>}
 
         <div
           className="card"
@@ -162,14 +163,9 @@ export function ProcessingScreen() {
               </button>
             ) : null}
             {stopped ? (
-              <>
-                <button type="button" className="btn btn-secondary compact" onClick={backToFile}>
-                  {t.processing.back}
-                </button>
-                <button type="button" className="btn btn-primary" style={{ padding: "9px 20px" }} onClick={retryJob}>
-                  {t.processing.retry}
-                </button>
-              </>
+              <button type="button" className="btn btn-primary" style={{ padding: "9px 20px" }} onClick={onRetry}>
+                {t.processing.retry}
+              </button>
             ) : null}
           </div>
         </div>

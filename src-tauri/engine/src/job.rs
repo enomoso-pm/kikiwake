@@ -3,6 +3,7 @@
 //! 中止したら動いているエンジンを止める。話者判定まで済んでいれば残し、やり直すと使い回す。
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -198,6 +199,8 @@ struct Running {
     id: String,
     cancel: Arc<Cancel>,
     thread: Option<JoinHandle<()>>,
+    /// 終わり（完了・失敗）を知らせた。あとはスレッドが片付けて抜けるだけ
+    ending: Arc<AtomicBool>,
 }
 
 pub struct Engine {
@@ -207,6 +210,10 @@ pub struct Engine {
     pub(crate) download: Mutex<Option<Arc<Cancel>>>,
     /// 画面の言語（約束 版7）。保存するファイルの中の言葉と、既定の保存先の名前に使う
     locale: Mutex<Lang>,
+    /// 画面で最後に見た録音（開いた・名前付け・結果・行の再生）。掃除でその音声を消さない（tidy.rs）
+    viewing: Mutex<Option<String>>,
+    /// 行の再生のための音声の取り出し（同じ録音を2つ同時に取り出さない）
+    pub(crate) audio_lock: Mutex<()>,
 }
 
 /// 突き合わせの段階の目安（秒）: 録音 1 時間あたり数秒
@@ -249,20 +256,37 @@ impl Ctx<'_> {
 impl Engine {
     pub fn new(paths: Paths, events: Arc<dyn Events>) -> Arc<Self> {
         let locale = remembered_locale(&paths).unwrap_or_default();
-        Arc::new(Self { paths, events, job: Mutex::new(None), download: Mutex::new(None), locale: Mutex::new(locale) })
+        Arc::new(Self {
+            paths,
+            events,
+            job: Mutex::new(None),
+            download: Mutex::new(None),
+            locale: Mutex::new(locale),
+            viewing: Mutex::new(None),
+            audio_lock: Mutex::new(()),
+        })
     }
 
     /// 処理を始める（別のスレッドで進め、途中経過・終わり・失敗はイベントで知らせる）。同時に動かすのは1本だけ
     pub fn start_job(self: &Arc<Self>, path: &Path) -> Result<JobStarted, AppError> {
         let (id, src) = identify(path)?;
         let mut slot = self.job.lock().unwrap();
-        if let Some(r) = slot.as_ref() {
+        if let Some(r) = slot.as_mut() {
             if r.thread.as_ref().is_some_and(|t| !t.is_finished()) {
-                return Err(AppError::engine_failed().with_detail("ほかの処理が動いている"));
+                // 終わりを知らせたあと片付けている最中なら、抜けるのを待つ（画面は終わりの知らせを受けてすぐ順番待ちの次を始める）
+                if !r.ending.load(Ordering::SeqCst) {
+                    return Err(AppError::engine_failed().with_detail("ほかの処理が動いている"));
+                }
+                if let Some(t) = r.thread.take() {
+                    let _ = t.join();
+                }
             }
         }
-        // 別の録音を始めたら、それまでの録音の取り出した音声と行の再生の切り抜きを消す（使い終えた。tidy.rs）
-        let t = tidy::tidy_jobs(&self.paths, Some(&id));
+        // 別の録音を始めたら、それまでの録音の取り出した音声と行の再生の切り抜きを消す（使い終えた。tidy.rs）。
+        // 画面で見ている録音には触らない（処理中にほかの録音を開ける形なので、見ている録音の行の再生が鳴らなくなる）
+        let viewing = self.viewing_id();
+        let keep: Vec<&str> = [Some(id.as_str()), viewing.as_deref()].into_iter().flatten().collect();
+        let t = tidy::tidy_jobs(&self.paths, &keep);
         if !t.is_empty() {
             log::write(&self.paths, &tidy::describe(&t));
         }
@@ -275,10 +299,11 @@ impl Engine {
         write_json(&job.file("source.json"), &src)?;
         let out_dir = default_out_dir(Path::new(&src.path), self.locale()).display().to_string();
         let cancel = Arc::new(Cancel::new());
+        let ending = Arc::new(AtomicBool::new(false));
         let me = Arc::clone(self);
-        let (c2, j2, source) = (Arc::clone(&cancel), job.clone(), PathBuf::from(&src.path));
-        let thread = std::thread::spawn(move || me.run(j2, source, c2));
-        *slot = Some(Running { id: id.clone(), cancel, thread: Some(thread) });
+        let (c2, e2, j2, source) = (Arc::clone(&cancel), Arc::clone(&ending), job.clone(), PathBuf::from(&src.path));
+        let thread = std::thread::spawn(move || me.run(j2, source, c2, e2));
+        *slot = Some(Running { id: id.clone(), cancel, thread: Some(thread), ending });
         Ok(JobStarted { job_id: id, out_dir })
     }
 
@@ -316,7 +341,8 @@ impl Engine {
                 None => break None,
             }
         };
-        let t = tidy::tidy_jobs(&self.paths, busy.as_deref());
+        let keep: Vec<&str> = busy.as_deref().into_iter().collect();
+        let t = tidy::tidy_jobs(&self.paths, &keep);
         if !t.is_empty() {
             log::write(&self.paths, &tidy::describe(&t));
         }
@@ -329,7 +355,7 @@ impl Engine {
         if !m.is_empty() {
             log::write(&self.paths, &m.describe());
         }
-        let t = tidy::tidy_jobs(&self.paths, None);
+        let t = tidy::tidy_jobs(&self.paths, &[]);
         if !t.is_empty() {
             log::write(&self.paths, &tidy::describe(&t));
         }
@@ -357,9 +383,22 @@ impl Engine {
         self.running_id().is_some()
     }
 
-    /// 処理中の録音の ID（履歴の一覧に出さない・消させない）
+    /// 処理中の録音の ID（履歴の一覧に出さない・消させない・掃除しない）
     pub fn running_id(&self) -> Option<String> {
         self.job.lock().unwrap().as_ref().and_then(|r| r.thread.as_ref().is_some_and(|t| !t.is_finished()).then(|| r.id.clone()))
+    }
+
+    /// 画面で最後に見た録音（掃除でその音声を消さない）
+    pub fn viewing_id(&self) -> Option<String> {
+        self.viewing.lock().unwrap().clone()
+    }
+
+    /// 画面がこの録音を見ている（開いた・名前付け・結果・行の再生のたびに呼ぶ）
+    pub fn set_viewing(&self, job_id: &str) {
+        let mut v = self.viewing.lock().unwrap();
+        if v.as_deref() != Some(job_id) {
+            *v = Some(job_id.to_string());
+        }
     }
 
     /// 処理が終わるまで待つ（画面なしのコマンド用）
@@ -370,7 +409,7 @@ impl Engine {
         }
     }
 
-    fn run(&self, job: JobDir, source: PathBuf, cancel: Arc<Cancel>) {
+    fn run(&self, job: JobDir, source: PathBuf, cancel: Arc<Cancel>, ending: Arc<AtomicBool>) {
         let _awake = KeepAwake::start();
         let ctx = Ctx { engine: self, job, source, cancel, t0: Instant::now(), reused: false, last_emit: Mutex::new(None) };
         // 録音の名前と場所はログに書かない（形式と大きさだけ。ログを Issue に貼ってもよいように）
@@ -382,6 +421,7 @@ impl Engine {
             Ok((ctx, done)) => {
                 set_status(&ctx.job, "done");
                 ctx.log(&format!("完了 {:.1} 秒", ctx.t0.elapsed().as_secs_f64()));
+                ending.store(true, Ordering::SeqCst);
                 self.events.job_done(&done);
             }
             Err((job, e)) => {
@@ -389,6 +429,7 @@ impl Engine {
                 let error = if e.is_cancelled() { AppError::cancelled(kept) } else { e };
                 set_status(&job, if error.is_cancelled() { "cancelled" } else { "failed" });
                 log::write(&self.paths, &format!("job {} 失敗 {error}", job.id));
+                ending.store(true, Ordering::SeqCst);
                 self.events.job_failed(&JobFailed { job_id: job.id.clone(), error, diarization_kept: kept });
             }
         }
@@ -851,6 +892,20 @@ fn now_secs() -> u64 {
 }
 
 #[cfg(test)]
+impl Engine {
+    /// テスト用: id の録音を処理中にする（返した送り口を落とすと処理が終わる）。ending は「終わりを知らせて片付けている」
+    pub(crate) fn fake_running(&self, id: &str, ending: bool) -> std::sync::mpsc::Sender<()> {
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let thread = std::thread::spawn(move || {
+            let _ = rx.recv();
+        });
+        *self.job.lock().unwrap() =
+            Some(Running { id: id.into(), cancel: Arc::new(Cancel::new()), thread: Some(thread), ending: Arc::new(AtomicBool::new(ending)) });
+        tx
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -883,6 +938,50 @@ mod tests {
         fn job_done(&self, _: &JobDone) {}
         fn job_failed(&self, _: &JobFailed) {}
         fn model_progress(&self, _: &crate::types::ModelInfo) {}
+    }
+
+    #[test]
+    fn next_job_waits_for_one_that_has_just_finished_and_keeps_the_viewed_audio() {
+        // 画面は終わりの知らせを受けてすぐ順番待ちの次を始める。前の処理が片付けている最中でも断らない（2026-09-27。案A）
+        let root = std::env::temp_dir().join(format!("kikiwake-next-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let paths = Paths {
+            models: root.join("models"),
+            app_data: root.join("app"),
+            work: root.join("work"),
+            legacy_work: None,
+            logs: root.join("logs"),
+            engines: root.join("engines"),
+        };
+        let engine = Engine::new(paths.clone(), Arc::new(NoEvents));
+        let rec = root.join("録音/次.m4a");
+        fs::create_dir_all(rec.parent().unwrap()).unwrap();
+        fs::write(&rec, b"0123456789").unwrap();
+        // 画面で見ている録音と、使い終えた録音（どちらも音声を取り出してある）
+        for id in ["cccc", "dddd"] {
+            fs::create_dir_all(paths.jobs().join(id).join("clips")).unwrap();
+            fs::write(paths.jobs().join(id).join("audio.wav"), b"x").unwrap();
+            fs::write(paths.jobs().join(id).join("clips/1_2.wav"), b"x").unwrap();
+        }
+        engine.set_viewing("cccc");
+        // まだ動いている（終わりを知らせていない）処理があれば断る
+        let busy = engine.fake_running("aaaa", false);
+        assert!(engine.start_job(&rec).is_err());
+        drop(busy);
+        // 終わりを知らせて片付けている最中なら、抜けるのを待ってから始める
+        let finishing = engine.fake_running("aaaa", true);
+        let t = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            drop(finishing);
+        });
+        let started = engine.start_job(&rec).unwrap();
+        t.join().unwrap();
+        assert_eq!(engine.running_id().as_deref().unwrap_or(started.job_id.as_str()), started.job_id);
+        // 別の録音を始めても、画面で見ている録音の音声と切り抜きは消さない（行の再生が鳴らなくなるため）
+        assert!(paths.jobs().join("cccc/audio.wav").is_file() && paths.jobs().join("cccc/clips/1_2.wav").is_file());
+        assert!(!paths.jobs().join("dddd/audio.wav").exists() && !paths.jobs().join("dddd/clips").exists());
+        engine.wait(); // エンジンの実行ファイルが無いので、すぐに止まる
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

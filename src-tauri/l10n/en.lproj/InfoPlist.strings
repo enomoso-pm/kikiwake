@@ -1,0 +1,7 @@
+/* 〜UsageDescription の説明（macOS がフォルダへのアクセスを尋ねるときに出す。src-tauri/Info.plist の同じ鍵の翻訳） */
+"NSDocumentsFolderUsageDescription" = "Kikiwake reads recordings in your Documents folder and saves transcripts next to them. Your recordings and transcripts stay on your Mac.";
+"NSDesktopFolderUsageDescription" = "Kikiwake reads recordings on your Desktop and saves transcripts next to them. Your recordings and transcripts stay on your Mac.";
+"NSDownloadsFolderUsageDescription" = "Kikiwake reads recordings in your Downloads folder and saves transcripts next to them. Your recordings and transcripts stay on your Mac.";
+"NSRemovableVolumesUsageDescription" = "Kikiwake reads recordings on external drives and saves transcripts next to them. Your recordings and transcripts stay on your Mac.";
+"NSNetworkVolumesUsageDescription" = "Kikiwake reads recordings on network shares and saves transcripts next to them. Your recordings and transcripts are not sent anywhere else.";
+"NSFileProviderDomainUsageDescription" = "Kikiwake reads recordings in cloud storage folders such as Google Drive and saves transcripts next to them. Kikiwake itself doesn't send your recordings or transcripts anywhere.";

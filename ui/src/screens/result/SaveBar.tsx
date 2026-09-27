@@ -8,7 +8,8 @@ import { useApp, useIsMac } from "../../store/state";
 
 const FORMATS: SaveFormat[] = ["md", "txt", "json"];
 
-export function SaveBar() {
+/** onSave: 「話者」のタブからも保存するので、入れた名前を確定してから保存する（objects/store の saveCurrent） */
+export function SaveBar({ onSave }: { onSave?: () => void } = {}) {
   const t = useT();
   const formats = useApp((s) => s.formats);
   const outDir = useApp((s) => s.outDir);
@@ -73,7 +74,7 @@ export function SaveBar() {
             </button>
           </>
         ) : null}
-        <button type="button" className="btn btn-primary" disabled={!anyFormat || saving} onClick={() => void save()}>
+        <button type="button" className="btn btn-primary" disabled={!anyFormat || saving} onClick={onSave ?? (() => void save())}>
           {saving ? t.save.saving : t.save.save}
         </button>
       </div>

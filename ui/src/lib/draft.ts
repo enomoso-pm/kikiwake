@@ -7,12 +7,12 @@ import type { AppState } from "../store/state";
 const FORMATS: readonly SaveFormat[] = ["md", "txt", "json"];
 
 /**
- * 画面の状態から、閉じたときの状態を作る。処理が終わった録音の名前付け・結果・完了の画面にいるときだけ（ほかは null）。
- * unsaved はファイルに保存していない手直しがあるか（store/result の hasUnsavedEdits）
+ * 画面の状態から、閉じたときの状態を作る。処理が終わった録音の「話者」「文字起こし」のタブにいるときだけ（ほかは null）。
+ * unsaved は保存したあとで変えたか（store/result の changedSinceSave）
  */
 export function draftOf(s: AppState, unsaved: boolean): JobDraft | null {
   if (!s.job?.jobId || s.job.status !== "done") return null;
-  if (s.screen !== "naming" && s.screen !== "result" && s.screen !== "done") return null;
+  if (s.screen !== "naming" && s.screen !== "result") return null;
   return {
     screen: s.screen === "naming" ? "naming" : "result",
     unsaved,
@@ -25,6 +25,7 @@ export function draftOf(s: AppState, unsaved: boolean): JobDraft | null {
     outDir: s.outDir,
     savedEdits: s.savedEdits,
     savedFiles: s.saved?.files ?? [],
+    savedOnce: s.savedOnce,
   };
 }
 
@@ -37,6 +38,8 @@ export function stateFromDraft(d: JobDraft): Partial<AppState> {
     hidden: Object.fromEntries((d.hidden ?? []).map((k) => [k, true as const])),
     savedEdits: d.savedEdits ?? null,
     saved: d.savedFiles?.length ? { files: [...d.savedFiles] } : null,
+    // 版9: 前の版の閉じたときの状態（savedOnce が無い）は、保存したファイルの記録があれば保存したとみなす
+    savedOnce: Boolean(d.savedOnce) || Boolean(d.savedFiles?.length),
   };
   if (d.formats?.length) out.formats = { md: d.formats.includes("md"), txt: d.formats.includes("txt"), json: d.formats.includes("json") };
   if (d.outDir) out.outDir = d.outDir;

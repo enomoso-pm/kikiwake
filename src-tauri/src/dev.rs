@@ -23,7 +23,14 @@ pub fn plugin<R: Runtime>() -> Option<tauri::plugin::TauriPlugin<R>> {
     let read = |name: &str| {
         std::fs::read_to_string(format!("{DEV_DIR}/{name}")).unwrap_or_else(|e| panic!("{DEV_DIR}/{name} を読めない: {e}"))
     };
-    let js = [read("snapshot.js"), read("init.js"), read("e2e.js")].join("\n");
+    // 筋書きの名前を先に入れる（init.js が、前の筋書きの記録を忘れさせるかを決める）
+    let name = std::fs::read_to_string(scenario_path()?)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(str::to_string))
+        .unwrap_or_default();
+    let head = format!("window.__kkScenarioName = {};", serde_json::to_string(&name).unwrap_or_else(|_| "\"\"".into()));
+    let js = [head, read("snapshot.js"), read("init.js"), read("e2e.js")].join("\n");
     Some(tauri::plugin::Builder::new("kikiwake-dev").js_init_script(js).build())
 }
 
@@ -80,6 +87,13 @@ pub fn dev_exists(path: String) -> bool {
 #[tauri::command]
 pub fn dev_rename(from: String, to: String) -> Result<(), String> {
     std::fs::rename(&from, &to).map_err(|e| format!("{from} → {to}: {e}"))
+}
+
+/// 更新日時だけを今にする（中身と大きさは同じ。元のファイルが「変わっています」の場合を作る。約束 版9）
+#[tauri::command]
+pub fn dev_touch(path: String) -> Result<(), String> {
+    let f = std::fs::File::options().write(true).open(&path).map_err(|e| format!("{path}: {e}"))?;
+    f.set_modified(std::time::SystemTime::now()).map_err(|e| format!("{path}: {e}"))
 }
 
 /// 見た目の比べ用の記録を書く
@@ -208,5 +222,10 @@ pub fn dev_resize(app: AppHandle, width: f64, height: f64) -> Result<(), String>
 pub fn dev_done(app: AppHandle, state: State<'_, AppState>, ok: bool, summary: String) {
     println!("[画面] おわり {summary}");
     state.closing.store(true, Ordering::SeqCst);
+    // Tauri は終わるときに 0 で抜けるので、NG があったことは覚えておき、後片付けのあとに 1 で終わる（lib.rs の RunEvent::Exit）
+    EXIT_CODE.store(if ok { 0 } else { 1 }, Ordering::SeqCst);
     app.exit(if ok { 0 } else { 1 });
 }
+
+/// 筋書きの結果（NG があれば 1）。scripts/e2e_mac.sh が終了コードで見る
+pub static EXIT_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);

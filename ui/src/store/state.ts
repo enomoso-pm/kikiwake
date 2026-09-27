@@ -13,18 +13,19 @@ import type {
   Stage,
   TranscriptView,
   UnresolvedHint,
+  UpdateInfo,
 } from "@contract/types";
 
 /**
- * done は完了の画面（準備と同じく工程の外。2026-09-26 決定。仕様書に無い）。
- * history は履歴の画面（ファイルの画面から入る。工程バーでは「1 ファイル」の中。2026-09-27 決定。仕様書に無い）
+ * 右に出す中身（録音が主役の画面。2026-09-27）。file は「＋ 新しい録音」、naming と result は録音の「話者」「文字起こし」のタブ。
+ * 前の形の履歴の画面・完了の画面は、左の録音の一覧と状態の印に置き換えて無くした
  */
-export type Screen = "setup" | "file" | "history" | "processing" | "naming" | "result" | "done";
+export type Screen = "setup" | "file" | "processing" | "naming" | "result";
 
-export const SCREENS: readonly Screen[] = ["setup", "file", "history", "processing", "naming", "result", "done"];
+export const SCREENS: readonly Screen[] = ["setup", "file", "processing", "naming", "result"];
 
 /** 保存していない手直しの確かめ（閉じる・別の録音へ移る）は 2026-09-27 にやめた（手直しは作業フォルダに残る。約束 版8） */
-export type DialogKind = "cancel" | "close" | "revertAll" | "overwrite" | "deleteHistory";
+export type DialogKind = "cancel" | "close" | "revertAll" | "overwrite";
 
 export interface JobView {
   /** startJob が返るまでは null */
@@ -55,10 +56,18 @@ export interface AppState {
   booted: boolean;
   bootError: AppError | null;
   screen: Screen;
-  /** 一度でも結果の画面を出したか（工程バーで 4⇔5 を行き来できる） */
-  reachedResult: boolean;
   dialog: DialogKind | null;
   toast: { id: number; text: string } | null;
+
+  // 新しい版の知らせ（約束 版10）
+  /** 起動したときに尋ねた答え（無い・確かめられないときは null） */
+  update: UpdateInfo | null;
+  /** 「この版は知らせない」にした版（覚えておく。store/update.ts） */
+  updateDismissed: string | null;
+  /** 起動したときに新しい版を確かめる（「AI モデルと動作条件」で止められる。初めは確かめる。2026-09-27 決定） */
+  updateCheck: boolean;
+  /** 更新内容と手順の窓を出している */
+  updateOpen: boolean;
 
   // 1 準備
   env: EnvironmentCheck | null;
@@ -78,8 +87,6 @@ export interface AppState {
   historyError: AppError | null;
   /** 開いている（音声を取り出している）録音の jobId */
   historyOpening: string | null;
-  /** 消す前に確かめている録音 */
-  historyDelete: HistoryItem | null;
   /** 結果の画面で行を再生できるか（履歴から元ファイルの無い録音を開いたら false） */
   playable: boolean;
   relinkError: AppError | null;
@@ -119,6 +126,11 @@ export interface AppState {
   outDir: string;
   saving: boolean;
   saved: { files: string[] } | null;
+  /**
+   * この録音の文字起こしをファイルに保存したことがある（約束 版9 の JobDraft.savedOnce）。保存したあとで名前を変えると
+   * saved（「保存しました」）は消えるが、これは残る（一覧の状態の印「保存後に手直し」のため）
+   */
+  savedOnce: boolean;
   saveError: AppError | null;
   /** 上書きの確認で見せる、同じ名前のファイル */
   overwrite: string[] | null;
@@ -148,6 +160,7 @@ export const resultInitial = (): Pick<
   | "outDir"
   | "saving"
   | "saved"
+  | "savedOnce"
   | "saveError"
   | "overwrite"
   | "savedEdits"
@@ -169,6 +182,7 @@ export const resultInitial = (): Pick<
   outDir: "",
   saving: false,
   saved: null,
+  savedOnce: false,
   saveError: null,
   overwrite: null,
   savedEdits: null,
@@ -179,9 +193,13 @@ export const useApp = create<AppState>()(() => ({
   booted: false,
   bootError: null,
   screen: "setup",
-  reachedResult: false,
   dialog: null,
   toast: null,
+
+  update: null,
+  updateDismissed: null,
+  updateCheck: true,
+  updateOpen: false,
 
   env: null,
   models: [],
@@ -196,7 +214,6 @@ export const useApp = create<AppState>()(() => ({
   history: null,
   historyError: null,
   historyOpening: null,
-  historyDelete: null,
   playable: true,
   relinkError: null,
 

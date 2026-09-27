@@ -10,7 +10,18 @@
   "named": true,
   "unsavedEdits": true,
   "sourceAvailable": true,
-  "diarizationKept": true
+  "diarizationKept": true,
+  "sourceState": "ok",
+  "saved": true,
+  "namedSpeakers": {
+   "names": [
+    "松本",
+    "田中",
+    "佐藤",
+    "鈴木"
+   ],
+   "unnamed": 0
+  }
  },
  {
   "jobId": "a04d9e7c61b2f835",
@@ -23,7 +34,9 @@
   "named": false,
   "unsavedEdits": false,
   "sourceAvailable": true,
-  "diarizationKept": true
+  "diarizationKept": true,
+  "sourceState": "ok",
+  "saved": false
  },
  {
   "jobId": "3b8e05f2c9d14a67",
@@ -36,7 +49,16 @@
   "named": true,
   "unsavedEdits": false,
   "sourceAvailable": false,
-  "diarizationKept": true
+  "diarizationKept": true,
+  "sourceState": "missing",
+  "saved": true,
+  "namedSpeakers": {
+   "names": [
+    "佐々木",
+    "高橋"
+   ],
+   "unnamed": 0
+  }
  },
  {
   "jobId": "d2e7a1c09f3b5846",
@@ -48,6 +70,23 @@
   "named": false,
   "unsavedEdits": false,
   "sourceAvailable": true,
-  "diarizationKept": false
+  "diarizationKept": false,
+  "sourceState": "ok",
+  "saved": false
+ },
+ {
+  "jobId": "7c3f9a2e4d6b1085",
+  "name": "営業定例_0915.m4a",
+  "path": "/Users/example/Documents/録音/営業定例_0915.m4a",
+  "durationSec": 3612.4,
+  "processedAt": "2026-09-15",
+  "status": "done",
+  "speakers": 3,
+  "named": false,
+  "unsavedEdits": false,
+  "sourceAvailable": false,
+  "diarizationKept": true,
+  "sourceState": "changed",
+  "saved": true
  }
 ]

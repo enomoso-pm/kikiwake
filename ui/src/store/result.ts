@@ -24,6 +24,15 @@ export function hasUnsavedEdits(s: AppState): boolean {
   return sig !== null && sig !== s.savedEdits;
 }
 
+/**
+ * 保存したあとで変えたか（閉じたときの状態の unsaved・一覧の印「保存後に手直し」）。行の手直しに加えて、保存したことがあり
+ * 「保存しました」が消えた（名前を変えた・形式や保存先を変えた）ときも（開いている間の印と同じ決め方。2026-09-27 に直した:
+ * 前は行の手直しだけを数え、保存したあとで名前を変えた録音が、ほかの録音へ移ると「保存済み」に戻っていた）
+ */
+export function changedSinceSave(s: AppState): boolean {
+  return hasUnsavedEdits(s) || (s.savedOnce && !s.saved);
+}
+
 function isUnresolved(s: AppState, id: string): boolean {
   return Boolean(s.view?.unresolved.some((l) => l.id === id));
 }
@@ -249,7 +258,7 @@ export async function save(overwrite = false): Promise<void> {
       setState({ saving: false, overwrite: res.existing, dialog: "overwrite" });
       return;
     }
-    setState({ saving: false, saved: { files: res.files }, savedEdits: editsSignature(s) });
+    setState({ saving: false, saved: { files: res.files }, savedOnce: true, savedEdits: editsSignature(s) });
   } catch (e) {
     setState({ saving: false, saveError: toAppError(e) });
   }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Kikiwake",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "io.github.enomoso-pm.kikiwake",
   "build": {
     "frontendDist": "../ui/dist",
@@ -50,7 +50,9 @@
     "copyright": "© 2026 enomoso-pm（MIT ライセンス）",
     "resources": {
       "../LICENSE": "LICENSE.txt",
-      "../THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt"
+      "../THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt",
+      "l10n/ja.lproj/InfoPlist.strings": "ja.lproj/InfoPlist.strings",
+      "l10n/en.lproj/InfoPlist.strings": "en.lproj/InfoPlist.strings"
     },
     "macOS": {
       "minimumSystemVersion": "14.0",

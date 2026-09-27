@@ -64,28 +64,6 @@ export function namesForApply(order: string[], names: Record<string, string>): N
   return out;
 }
 
-/** 保存される人数: 名前の種類の数＋名前の無いラベルの数 */
-export function peopleCount(grouping: NameGrouping): number {
-  return grouping.groups.length + grouping.unnamed.length;
-}
-
-/** 名前付けの下の帯の1行目（§7.4） */
-export function namingSummary(order: string[], grouping: NameGrouping): string {
-  const t = getT();
-  const merged = grouping.groups
-    .filter((g) => g.labels.length > 1)
-    .map((g) => t.naming.mergedItem(g.labels.map(t.engine.speakerLabel), g.name));
-  return t.naming.saveAs(t.naming.labelCount(order.length), peopleCount(grouping)) + (merged.length ? t.naming.mergedList(merged) : "");
-}
-
-/** 名前付けの下の帯の2行目（§7.4） */
-export function namingSummarySub(grouping: NameGrouping): string {
-  const t = getT();
-  return grouping.unnamed.length
-    ? t.naming.unnamed(t.common.labels(grouping.unnamed.map(t.engine.speakerLabel)))
-    : t.naming.allNamed;
-}
-
 // 手がかりの種類はエンジンが日本語で返す（Python 版と同じ JSON の鍵）。表示は今の言語で
 const HINT_ORDER = ["自己紹介", "呼びかけ直後"] as const;
 

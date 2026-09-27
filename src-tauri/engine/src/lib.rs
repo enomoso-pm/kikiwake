@@ -16,6 +16,7 @@ pub mod proc;
 pub mod results;
 pub mod tidy;
 pub mod types;
+pub mod update;
 
 pub use error::AppError;
 pub use job::Engine;

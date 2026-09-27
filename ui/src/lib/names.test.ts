@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatHints, groupNames, nameKey, namesForApply, namingSummary, namingSummarySub } from "./names";
+import { formatHints, groupNames, nameKey, namesForApply } from "./names";
 
 describe("名前のまとめ（§7.3・§13 Q4: 全角と半角の違いは同じとみなす）", () => {
   it("前後の空白（全角も）を除き、全角・半角をそろえて比べる", () => {
@@ -20,17 +20,12 @@ describe("名前のまとめ（§7.3・§13 Q4: 全角と半角の違いは同�
     ]);
     expect(g.unnamed).toEqual(["話者C"]);
     expect(namesForApply(order, names)).toEqual({ 話者A: "Sato", 話者B: "鈴木", 話者E: "Sato" });
-    expect(namingSummary(order, g)).toBe("4つのラベル → 3人として保存（話者A＋話者E → Sato）");
-    expect(namingSummarySub(g)).toBe("名前なし：話者C（そのまま残ります）");
   });
 
-  it("名前をすべて空にしても進める。10ラベル以上は「個」で数える", () => {
+  it("名前をすべて空にしても進める（話者の数え方は「話者 10」。2026-09-27 に「ラベル」をやめた）", () => {
     const order = Array.from({ length: 10 }, (_, i) => `話者${String.fromCharCode(65 + i)}`);
-    const g = groupNames(order, {});
+    expect(groupNames(order, {}).unnamed).toHaveLength(10);
     expect(namesForApply(order, {})).toEqual({});
-    expect(namingSummary(order, g)).toBe("10個のラベル → 10人として保存");
-    const all = Object.fromEntries(order.map((l, i) => [l, `名前${i}`]));
-    expect(namingSummarySub(groupNames(order, all))).toBe("すべてのラベルに名前が付いています");
   });
 });
 

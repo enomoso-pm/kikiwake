@@ -5,7 +5,7 @@ import envProblemJson from "@contract/fixtures/environment_problem_example.json"
 import envWindowsJson from "@contract/fixtures/environment_windows_example.json";
 import type { AppError, EnvironmentCheck } from "@contract/types";
 import { formatEstimate, formatMonthDay, formatRemaining } from "../lib/format";
-import { formatHints, namingSummarySub } from "../lib/names";
+import { formatHints } from "../lib/names";
 import { en } from "./en";
 import { getT, initialLocale, setLocale } from "./index";
 import { ja } from "./ja";
@@ -60,13 +60,22 @@ describe("エンジンが日本語で返す文を英語に", () => {
   });
 
   it("中止は話者判定を残したかで分ける", () => {
-    expect(en.engine.error({ code: "cancelled", message: "中止しました。" })).toBe("Stopped.");
+    expect(en.engine.error({ code: "cancelled", message: "中止しました。" })).toBe("Canceled.");
     expect(en.engine.error({ code: "cancelled", message: "中止しました。話者の判定結果は残してあるので、やり直すと続きから始めます。" })).toMatch(/kept/);
   });
 
-  it("日本語では、エンジンの文をそのまま出す", () => {
-    const e = errors.file_not_found;
-    expect(ja.engine.error(e)).toBe(e.message);
+  it("日本語では、エンジンの文を画面の言葉にそろえて出す（2026-09-27。知らない code の文はそのまま）", () => {
+    expect(ja.engine.error(errors.engine_failed)).toBe(
+      "文字起こしの途中で問題が起きました。もう一度実行してください。続く場合は詳細をコピーして連絡してください。",
+    );
+    expect(ja.engine.error({ code: "cancelled", message: "中止しました。話者の判定結果は残してあるので、やり直すと続きから始めます。" })).toBe(
+      "中止しました。声の聞き分けの結果は残してあるので、再開すると続きからはじめます。",
+    );
+    // 空き容量は数が入るのでエンジンの文のまま
+    expect(ja.engine.error(errors.disk_full)).toBe(errors.disk_full.message);
+    expect(ja.engine.error({ code: "engine_failed_x" as never, message: "知らない文" })).toBe("知らない文");
+    // 用語の決まり（ja.ts の頭）でやめた言葉が、エラーの文に残っていない
+    for (const e of Object.values(errors)) expect(ja.engine.error(e), e.code).not.toMatch(/書き起こし|話者の判定|セットアップ|元の録音/);
   });
 
   it("動作条件の文はどれも英語になる（見本の3つとも）", () => {
@@ -83,7 +92,9 @@ describe("エンジンが日本語で返す文を英語に", () => {
   it("話者のラベル", () => {
     expect(en.engine.speakerLabel("話者A")).toBe("Speaker A");
     expect(en.engine.speakerLabel("話者AB")).toBe("Speaker AB");
-    expect(en.engine.speakerLabel("不明")).toBe("Unknown");
+    expect(en.engine.speakerLabel("不明")).toBe("Unassigned");
+    // 画面では、保存したファイルの見出しと同じ「確認用」
+    expect(ja.engine.speakerLabel("不明")).toBe("確認用");
     expect(en.engine.speakerLabel("松本")).toBe("松本");
     expect(ja.engine.speakerLabel("話者A")).toBe("話者A");
   });
@@ -106,9 +117,8 @@ describe("英語の書き方", () => {
     expect(formatMonthDay("2026-09-24")).toBe("Sep 24");
   });
 
-  it("名前の手がかりと、名前の無いラベル", () => {
+  it("名前の手がかり", () => {
     setLocale("en");
     expect(formatHints([{ name: "田中", sources: { 自己紹介: 2, 呼びかけ直後: 1 } }])).toBe("田中 (self-intro ×2, addressed ×1)");
-    expect(namingSummarySub({ groups: [], byLabel: {}, unnamed: ["話者A", "話者C"] })).toBe("No name: Speaker A, Speaker C (kept as is)");
   });
 });

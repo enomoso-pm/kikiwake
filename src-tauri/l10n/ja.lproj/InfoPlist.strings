@@ -1,0 +1,7 @@
+/* 〜UsageDescription の説明（macOS がフォルダへのアクセスを尋ねるときに出す。src-tauri/Info.plist の同じ鍵の翻訳） */
+"NSDocumentsFolderUsageDescription" = "「書類」フォルダにある録音・録画を読み込み、文字起こしをその隣に保存するために使います。録音も文字も、この Mac の外には送りません。";
+"NSDesktopFolderUsageDescription" = "「デスクトップ」にある録音・録画を読み込み、文字起こしをその隣に保存するために使います。録音も文字も、この Mac の外には送りません。";
+"NSDownloadsFolderUsageDescription" = "「ダウンロード」フォルダにある録音・録画を読み込み、文字起こしをその隣に保存するために使います。録音も文字も、この Mac の外には送りません。";
+"NSRemovableVolumesUsageDescription" = "外付けのドライブや USB メモリにある録音・録画を読み込み、文字起こしをその隣に保存するために使います。録音も文字も、この Mac の外には送りません。";
+"NSNetworkVolumesUsageDescription" = "ネットワーク上の共有フォルダにある録音・録画を読み込み、文字起こしをその隣に保存するために使います。録音と文字を、ほかの所へは送りません。";
+"NSFileProviderDomainUsageDescription" = "Google ドライブなどのクラウドのフォルダにある録音・録画を読み込み、文字起こしをその隣に保存するために使います。Kikiwake 自身は録音も文字もインターネットに送りません。";

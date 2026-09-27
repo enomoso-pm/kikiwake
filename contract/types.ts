@@ -1,6 +1,6 @@
 // Kikiwake 画面 ⇄ エンジンの受け渡しの約束（データの形）。ここが正。
 // 変更したら contract/README.md の履歴に書く。
-// 版 8（2026-09-27）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
+// 版 10（2026-09-27）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
 // 書き起こしは正確さ優先（Whisper large-v3）だけ。版1にあった品質の選択（速さ優先）は無くした。
 
 /**
@@ -79,6 +79,11 @@ export interface FileInfo {
      */
     resultReusable: boolean;
   };
+  /**
+   * 版9で追加。同じ場所の録音を前に文字起こししていて、そのあとファイルが変わった（大きさか更新日時が違うので、新しい録音として扱う）。
+   * 前の録音を最後に処理した日。previous（同じ録音の前回）があるときは付けない
+   */
+  previousChanged?: { processedAt: string };
 }
 
 /** 版6で追加。ファイルのドラッグが窓の上にある間の位置（onFileDragOver） */
@@ -298,6 +303,22 @@ export interface SaveResult {
 export type HistoryStatus = "done" | "unfinished";
 
 /**
+ * 版9で追加。元ファイルの状態。
+ * ok: 同じ場所に同じファイルがある（大きさ・更新日時も同じ）
+ * missing: 場所にファイルが無い（消した・移した・名前を変えた・外付けのドライブを外した）
+ * changed: 場所にあるが大きさか更新日時が違う（編集した・書き出し直した・コピーし直した・クラウドの同期）。別の録音として扱う
+ */
+export type SourceState = "ok" | "missing" | "changed";
+
+/** 版9で追加。付けた名前（一覧の行に「松本・田中ほか2人」と出す） */
+export interface NamedSpeakers {
+  /** 付けた名前。同じ名前を付けた話者は1つにまとめ、発言の多い順（保存するファイルの発言時間と同じ数え方） */
+  names: string[];
+  /** 名前を付けていない話者の数 */
+  unnamed: number;
+}
+
+/**
  * 版8で追加。履歴の1件（listHistory）。作業フォルダ（~/Library/Application Support/Kikiwake/jobs/）がそのまま履歴。
  * 並びは最後に使った順（処理・名前の確定・手直しのどれか）。いま処理中の録音は入らない
  */
@@ -317,10 +338,16 @@ export interface HistoryItem {
   named: boolean;
   /** ファイルに保存していない手直しがある（JobDraft.unsaved） */
   unsavedEdits: boolean;
-  /** 元ファイルが今もある（同じ場所・大きさ・更新日時）。無ければ行の再生と続きからの再開はできない（書き起こしは読める） */
+  /** 元ファイルが今もある（同じ場所・大きさ・更新日時）。無ければ行の再生と続きからの再開はできない（書き起こしは読める）。sourceState が ok のときだけ true */
   sourceAvailable: boolean;
   /** 途中のとき、話者の判定まで済んでいる（続きからは書き起こしから） */
   diarizationKept: boolean;
+  /** 版9で追加。元ファイルの状態（見つからない・変わったを分ける） */
+  sourceState: SourceState;
+  /** 版9で追加。文字起こしをファイルに保存したことがある（JobDraft.savedOnce。前の版の状態は savedFiles で見る） */
+  saved: boolean;
+  /** 版9で追加。付けた名前。名前を確定していなければ省略 */
+  namedSpeakers?: NamedSpeakers;
 }
 
 /** 版8で追加。履歴から開いた録音（openHistory・relinkSource）。JobDone と同じ中身に、元ファイルがあるかを足したもの */
@@ -351,6 +378,32 @@ export interface JobDraft {
   outDir?: string;
   savedEdits?: string | null;
   savedFiles?: string[];
+  /**
+   * 版9で追加。この録音の文字起こしをファイルに保存したことがある（保存したあとで名前を変えると savedFiles は空に戻るが、これは残る）。
+   * 履歴の一覧の saved（状態の印「保存前」「保存済み」「保存後に手直し」）に使う
+   */
+  savedOnce?: boolean;
+}
+
+// ---- 新しい版の知らせ（版10） -------------------------------------------------------------
+
+/**
+ * 版10で追加。新しい版の知らせ（checkUpdate）。GitHub の最新のリリース（下書きと試用版は入らない）が、今の版より新しいとき。
+ * アプリは自動では入れ替えない（利用者が手順を読んで入れ替える。2026-09-27 決定）
+ */
+export interface UpdateInfo {
+  /** 新しい版（例 "1.0.1"） */
+  version: string;
+  /** 今の版 */
+  current: string;
+  /** リリースの題（例 "Kikiwake 1.0.1"） */
+  title: string;
+  /** 更新内容（リリースの本文。Markdown の文字のまま） */
+  notes: string;
+  /** 公開日（YYYY-MM-DD。分からなければ空） */
+  publishedAt: string;
+  /** リリースのページ（版の番号から作る） */
+  url: string;
 }
 
 // ---- エラー ------------------------------------------------------------------------

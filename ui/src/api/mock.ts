@@ -12,6 +12,7 @@ import type {
   JobProgress,
   Locale,
   ModelInfo,
+  NamedSpeakers,
   Names,
   SaveResult,
   SpeakerCard,
@@ -44,6 +45,10 @@ export interface MockScenario {
   result: "one" | "typical" | "none" | "repeat";
   save: "normal" | "existing" | "failed";
   applyFails: boolean;
+  /** 見本: 保存したファイルを移した・消した（Finder で表示すると見つからない） */
+  savedMissing: boolean;
+  /** 版10: 新しい版があるか（起動したときの確認の答え。切り替えたら読み込み直すと出る） */
+  update: "none" | "available";
 }
 
 export const DEFAULT_SCENARIO: MockScenario = {
@@ -57,6 +62,8 @@ export const DEFAULT_SCENARIO: MockScenario = {
   result: "one",
   save: "normal",
   applyFails: false,
+  savedMissing: false,
+  update: "none",
 };
 
 let scenario: MockScenario = { ...DEFAULT_SCENARIO };
@@ -213,6 +220,41 @@ let history: HistoryItem[] = fixtures.history();
 const drafts = new Map<string, JobDraft>();
 const jobPaths = new Map<string, string>();
 
+/**
+ * 録音の見分け（見本 で足した。2026-09-27）。エンジンは「場所・大きさ・更新日時」で見分けるので、
+ * 同じ場所でもファイルが変わると別の録音になる。見本は場所で見分けてきたので、同じ場所にある「変わる前の録音」には
+ * 別の鍵を持たせる（世代）。作例を切り替えなければ、鍵は今までどおり場所だけ
+ */
+const itemKeys = new Map<string, string>();
+const pathGen = new Map<string, number>();
+/** 元のファイルの状態の作例（約束 版9 の sourceState。開発用の切替の「案A の作例」から） */
+type SourceCase = "missing" | "changed-same" | "changed-diff";
+const sourceCases = new Map<string, SourceCase>();
+/** 最後に始めた・開いた録音（保存先を選ぶ見本で使う） */
+let currentPath: string | null = null;
+
+const keyOfPath = (path: string): string => {
+  const k = pathKey(path);
+  const g = pathGen.get(k) ?? 0;
+  return g ? `${k}#${g}` : k;
+};
+const keyOfItem = (h: HistoryItem): string => itemKeys.get(h.jobId) ?? pathKey(h.path);
+function keyOfJob(jobId: string): string {
+  const known = itemKeys.get(jobId);
+  if (known) return known;
+  const path = jobPaths.get(jobId) ?? history.find((h) => h.jobId === jobId)?.path;
+  return path ? keyOfPath(path) : jobId;
+}
+/** その場所に、文字起こししたあとでファイルが変わった録音があるか（あれば、今そこにあるファイルは別の新しい録音） */
+function changedAt(path: string): HistoryItem | undefined {
+  const k = keyOfPath(path);
+  return history.find((h) => keyOfItem(h) === k && (sourceCases.get(h.jobId) ?? "").startsWith("changed"));
+}
+/** 今その場所にあるファイルの鍵（変わった録音があれば、次の世代） */
+function freshKeyOf(path: string): string {
+  return changedAt(path) ? `${pathKey(path)}#${(pathGen.get(pathKey(path)) ?? 0) + 1}` : keyOfPath(path);
+}
+
 /** 版6: 書き起こしまで済んだ録音（選び直すと、書き起こしをやり直さずに1秒ほどで名前付けへ）と、そのとき確定した名前 */
 const transcriptDone = new Set<string>();
 const namesByPath = new Map<string, Names>();
@@ -242,6 +284,8 @@ function attachDrop() {
 interface MockJob {
   id: string;
   path: string;
+  /** 録音の鍵（keyOfPath。変わったファイルを新しく処理すると、前の録音とは別の鍵） */
+  key: string;
   timers: number[];
   running: boolean;
   diarizationKept: boolean;
@@ -262,9 +306,28 @@ function fail(j: MockJob, error: AppError) {
   ev.failed.emit({ jobId: j.id, error, diarizationKept: j.diarizationKept });
 }
 
+/**
+ * 版9: 付けた名前（エンジンと同じ: 同じ名前は1人にまとめ、発言の多い順。名前を付けていない話者の数も）。
+ * 見本は話者カードの発言時間で数える（エンジンは話者の判定の区間から。同じ値）
+ */
+function namedSpeakersFor(names: Names | undefined): NamedSpeakers | undefined {
+  if (!names) return undefined;
+  const talk = new Map<string, number>();
+  let unnamed = 0;
+  for (const c of speakersFor()) {
+    const who = (names[c.label] ?? "").trim();
+    if (who) talk.set(who, (talk.get(who) ?? 0) + c.talkSec);
+    else unnamed += 1;
+  }
+  if (!talk.size) return undefined;
+  return { names: [...talk.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n), unnamed };
+}
+
 /** 版8: 処理した録音を履歴の一番上に（同じ録音は置き換える） */
 function remember(j: MockJob, status: HistoryItem["status"]) {
-  const names = namesByPath.get(pathKey(j.path));
+  const names = namesByPath.get(j.key);
+  const draft = drafts.get(j.key);
+  const namedSpeakers = namedSpeakersFor(names);
   const item: HistoryItem = {
     jobId: j.id,
     name: baseName(j.path),
@@ -274,21 +337,25 @@ function remember(j: MockJob, status: HistoryItem["status"]) {
     status,
     ...(status === "done" || j.diarizationKept ? { speakers: speakersFor().length } : {}),
     named: Boolean(names && Object.values(names).some((v) => v.trim())),
-    unsavedEdits: Boolean(drafts.get(pathKey(j.path))?.unsaved),
+    unsavedEdits: Boolean(draft?.unsaved),
     sourceAvailable: true,
     diarizationKept: j.diarizationKept,
+    sourceState: "ok",
+    saved: status === "done" && Boolean(draft?.savedOnce || draft?.savedFiles?.length),
+    ...(namedSpeakers ? { namedSpeakers } : {}),
   };
-  history = [item, ...history.filter((h) => pathKey(h.path) !== pathKey(j.path))];
+  itemKeys.set(j.id, j.key);
+  history = [item, ...history.filter((h) => keyOfItem(h) !== j.key)];
 }
 
 function jobDone(j: MockJob) {
   j.running = false;
   stopTimers(j);
-  transcriptDone.add(pathKey(j.path));
+  transcriptDone.add(j.key);
   remember(j, "done");
   const t = baseTranscript();
-  const names = namesByPath.get(pathKey(j.path));
-  const draft = drafts.get(pathKey(j.path));
+  const names = namesByPath.get(j.key);
+  const draft = drafts.get(j.key);
   ev.done.emit({
     jobId: j.id,
     outDir: outDirFor(j.path),
@@ -308,7 +375,7 @@ function deliver(j: MockJob, e: TimelineEvent) {
   const p: JobProgress = { ...e.data, jobId: j.id };
   if (p.stage === "transcribe" || p.stage === "merge") {
     j.diarizationKept = true;
-    diarizationDone.add(pathKey(j.path));
+    diarizationDone.add(j.key);
   }
   if (scenario.job === "failed" && p.stage === "transcribe" && (p.stagePercent ?? 0) > 63) {
     ev.progress.emit({ ...p, stagePercent: 63 });
@@ -378,15 +445,27 @@ const appliedNames = new Map<string, Names>();
 const savedFiles = new Set<string>();
 
 /** 版8: 履歴から開いた録音（作例は合成会議の結果を出す） */
+/** 見本の作例: 保存したことがある録音の閉じたときの状態（保存後に手直しがあれば、手直しした行を1つ） */
+function savedExampleDraft(item: HistoryItem): JobDraft {
+  if (item.unsavedEdits) {
+    return { screen: "result", unsaved: true, savedOnce: true, savedFiles: [], textHistory: { u0: ["（見本）保存したあとで直した文"] } };
+  }
+  const file = joinPath(outDirFor(item.path), item.named ? "transcript_named.md" : "transcript.md");
+  return { screen: "naming", unsaved: false, savedOnce: true, savedFiles: [file] };
+}
+
 function opened(item: HistoryItem, sourceAvailable: boolean): HistoryOpened {
-  const key = pathKey(item.path);
+  const key = keyOfItem(item);
+  itemKeys.set(item.jobId, key);
   jobPaths.set(item.jobId, item.path);
+  currentPath = item.path;
   transcriptDone.add(key);
   diarizationDone.add(key);
   if (item.named && !namesByPath.has(key)) namesByPath.set(key, fixtures.names());
   const names = namesByPath.get(key);
   if (names) appliedNames.set(item.jobId, { ...names });
-  const draft = drafts.get(key);
+  // 見本の作例で「保存したことがある」録音は、保存したときの記録を持たせる（開いても一覧の印と同じになるように）
+  const draft = drafts.get(key) ?? (item.saved ? savedExampleDraft(item) : undefined);
   return {
     jobId: item.jobId,
     outDir: outDirFor(item.path),
@@ -461,8 +540,12 @@ export const mockApi: KikiwakeApi = {
     }
     const base = supportedBase();
     const info: FileInfo = { ...base, name, path };
-    const reusable = scenario.file === "previous" || diarizationDone.has(pathKey(path));
-    const resultReusable = transcriptDone.has(pathKey(path));
+    const key = freshKeyOf(path);
+    const reusable = scenario.file === "previous" || diarizationDone.has(key);
+    const resultReusable = transcriptDone.has(key);
+    // 同じ場所の録音を前に文字起こししていて、そのあとファイルが変わった（約束 版9）
+    const changed = changedAt(path);
+    if (changed) info.previousChanged = { processedAt: changed.processedAt };
     if (reusable) {
       info.previous = {
         outDir: outDirFor(path),
@@ -482,11 +565,19 @@ export const mockApi: KikiwakeApi = {
       job.running = false;
       stopTimers(job);
     }
-    const reused = scenario.file === "previous" || diarizationDone.has(pathKey(path));
-    const j: MockJob = { id: `job-mock-${++jobSeq}`, path, timers: [], running: true, diarizationKept: reused };
+    // 変わったファイルを処理する: 前の録音は今の鍵のまま残し、この場所は次の世代にする（エンジンでは ID が変わる）
+    const old = changedAt(path);
+    if (old) {
+      itemKeys.set(old.jobId, keyOfItem(old));
+      pathGen.set(pathKey(path), (pathGen.get(pathKey(path)) ?? 0) + 1);
+    }
+    const key = keyOfPath(path);
+    const reused = scenario.file === "previous" || diarizationDone.has(key);
+    const j: MockJob = { id: `job-mock-${++jobSeq}`, path, key, timers: [], running: true, diarizationKept: reused };
     job = j;
     jobPaths.set(j.id, path);
-    if (transcriptDone.has(pathKey(path))) {
+    currentPath = path;
+    if (transcriptDone.has(key)) {
       // 版6: 前回の書き起こしを使い回す（エンジンは1秒ほど。段階は一瞬で進む）
       const at = (sec: number, stage: JobProgress["stage"], stagePercent: number | null) =>
         j.timers.push(
@@ -532,7 +623,11 @@ export const mockApi: KikiwakeApi = {
       throw fixtureError("engine_failed", "apply_names: transcript_named.json を書けませんでした（見本の作例）");
     }
     appliedNames.set(jobId, { ...names });
-    if (job && job.id === jobId) namesByPath.set(pathKey(job.path), { ...names });
+    // エンジンは確定した名前を作業フォルダに書く（履歴の「名前あり」）。履歴から開いた録音でも同じ
+    const key = keyOfJob(jobId);
+    namesByPath.set(key, { ...names });
+    const item = history.find((h) => keyOfItem(h) === key);
+    if (item) item.named = Object.values(names).some((v) => v.trim());
     return applyNamesTo(baseTranscript(), names);
   },
 
@@ -544,7 +639,7 @@ export const mockApi: KikiwakeApi = {
   async pickFolder(defaultDir) {
     await wait(200);
     // 見本: 既定の保存先とデスクトップの間で切り替える（製品では OS のフォルダ選択画面）
-    const path = job?.path ?? scenarioFilePath();
+    const path = currentPath ?? scenarioFilePath();
     const original = outDirFor(path);
     const desktop = joinPath(osPath("/Users/example/Desktop"), outDirName(path));
     return defaultDir && pathKey(defaultDir) === pathKey(desktop) ? original : desktop;
@@ -570,6 +665,10 @@ export const mockApi: KikiwakeApi = {
   },
   async revealInFileManager(path) {
     await wait(50);
+    // 見本 の作例: 保存したファイルを移した・消した
+    if (scenario.savedMissing && /_(文字起こし|transcript)[\\/]/.test(path)) {
+      throw fixtureError("file_not_found", `${path}（見本の作例）`);
+    }
     const where = scenario.os === "windows" ? "エクスプローラー" : "Finder";
     ev.notice.emit({ kind: "text", text: `（見本）${where}で表示：${path}` });
   },
@@ -591,50 +690,99 @@ export const mockApi: KikiwakeApi = {
   // ---- 版8: 履歴・閉じたときの状態 ----
   async listHistory() {
     await wait(120);
-    const running = job && job.running ? pathKey(job.path) : null;
+    const running = job && job.running ? job.key : null;
     return history
-      .filter((h) => pathKey(h.path) !== running)
-      .map((h) => ({ ...h, unsavedEdits: h.status === "done" && (drafts.get(pathKey(h.path))?.unsaved ?? h.unsavedEdits) }));
+      .filter((h) => keyOfItem(h) !== running)
+      .map((h): HistoryItem => {
+        const key = keyOfItem(h);
+        const draft = drafts.get(key);
+        const c = sourceCases.get(h.jobId);
+        const names = namesByPath.get(key);
+        const namedSpeakers = names ? namedSpeakersFor(names) : h.namedSpeakers;
+        const { namedSpeakers: _fixture, ...rest } = h;
+        return {
+          ...rest,
+          named: names ? Object.values(names).some((v) => v.trim()) : h.named,
+          unsavedEdits: h.status === "done" && (draft?.unsaved ?? h.unsavedEdits),
+          // 版9: 元のファイルの状態（作例の切替があればそれ）・保存したことがあるか・付けた名前
+          sourceState: c ? (c === "missing" ? "missing" : "changed") : h.sourceState,
+          saved: h.status === "done" && (h.saved || Boolean(draft?.savedOnce || draft?.savedFiles?.length)),
+          ...(namedSpeakers ? { namedSpeakers } : {}),
+        };
+      });
   },
   async openHistory(jobId) {
     await wait(400);
     const item = history.find((h) => h.jobId === jobId);
     if (!item) throw fixtureError("file_not_found", `履歴に無い: ${jobId}（見本）`);
     if (item.status !== "done") throw fixtureError("engine_failed", `まだ書き終えていない録音: ${jobId}（見本）`);
-    if (job) {
-      job.running = false;
-      stopTimers(job);
-    }
+    // 処理中の録音は止めない（エンジンも止めない。見本 では処理中にほかの録音を開ける）
     return opened(item, item.sourceAvailable);
   },
   async deleteHistory(jobId) {
     await wait(150);
     const item = history.find((h) => h.jobId === jobId);
     if (!item) return;
-    const key = pathKey(item.path);
+    const key = keyOfItem(item);
     history = history.filter((h) => h.jobId !== jobId);
     [drafts, namesByPath].forEach((m) => m.delete(key));
     [transcriptDone, diarizationDone].forEach((m) => m.delete(key));
+    sourceCases.delete(jobId);
+    itemKeys.delete(jobId);
   },
   async relinkSource(jobId, path) {
     await wait(300);
     const item = history.find((h) => h.jobId === jobId);
     if (!item) throw fixtureError("file_not_found", `履歴に無い: ${jobId}（見本）`);
-    // 見本: 名前が同じなら同じ録音とみなす（エンジンは大きさと長さで決める）
+    // 見本: 名前が同じなら同じ録音とみなす（エンジンは大きさと長さで決める）。
+    // 案A の作例「変わった（切った）」は、同じ場所のファイルでも大きさが違うので断る
+    if (sourceCases.get(jobId) === "changed-diff" && pathKey(path) === pathKey(item.path)) {
+      throw fixtureError("not_same_recording", `大きさ 18234112→16020480（見本の作例）`);
+    }
     if (baseName(path) !== item.name) throw fixtureError("not_same_recording", `${item.name} ≠ ${baseName(path)}（見本）`);
-    const draft = drafts.get(pathKey(item.path));
+    const oldKey = keyOfItem(item);
+    const newKey = pathKey(path) === pathKey(item.path) ? oldKey : keyOfPath(path);
+    if (newKey !== oldKey) {
+      for (const m of [drafts, namesByPath] as Array<Map<string, unknown>>) {
+        if (m.has(oldKey)) m.set(newKey, m.get(oldKey));
+        m.delete(oldKey);
+      }
+      for (const m of [transcriptDone, diarizationDone]) {
+        if (m.delete(oldKey)) m.add(newKey);
+      }
+    }
+    itemKeys.set(jobId, newKey);
     item.path = path;
     item.sourceAvailable = true;
-    if (draft) drafts.set(pathKey(path), draft);
+    sourceCases.delete(jobId);
     return opened(item, true);
   },
   async saveDraft(jobId, draft) {
     const path = jobPaths.get(jobId) ?? history.find((h) => h.jobId === jobId)?.path;
     if (!path) return;
-    drafts.set(pathKey(path), structuredClone(draft));
+    const key = keyOfJob(jobId);
+    drafts.set(key, structuredClone(draft));
     // エンジンと同じく、手直しした録音を履歴の一番上に（最後に使った順）
-    const item = history.find((h) => pathKey(h.path) === pathKey(path));
+    const item = history.find((h) => keyOfItem(h) === key);
     if (item) history = [item, ...history.filter((h) => h !== item)];
+  },
+
+  // ---- 版10: 新しい版の知らせ ----
+  async checkUpdate() {
+    await wait(300);
+    if (scenario.update !== "available") return null;
+    return {
+      version: "1.0.1",
+      current: "1.0.0",
+      title: "Kikiwake 1.0.1",
+      notes: "- 長い録音で、保存の帯が隠れることがあったのを直しました\n- 一覧の行に、付けた名前を出すようにしました",
+      publishedAt: "2026-10-05",
+      url: "https://github.com/enomoso-pm/kikiwake/releases/tag/v1.0.1",
+    };
+  },
+  async openReleasePage(version) {
+    await wait(50);
+    ev.notice.emit({ kind: "text", text: `（見本）ブラウザで v${version} のリリースのページを開きます` });
   },
 };
 
@@ -661,7 +809,7 @@ export const mockDev = {
     if (!job || job.id !== jobId || !job.running) return;
     stopTimers(job);
     job.diarizationKept = true;
-    diarizationDone.add(pathKey(job.path));
+    diarizationDone.add(job.key);
     jobDone(job);
   },
   /**
@@ -672,6 +820,19 @@ export const mockDev = {
     if (job && job.running) ev.close.emit();
     else ev.notice.emit({ kind: "closed", text: "（見本）ここでアプリが閉じます（処理中ではないので、確かめない。手直しは履歴に残る）" });
     return true;
+  },
+  /** 見本 の作例: 元のファイルの状態（ある・見つからない・変わった。変わったは長さが同じか違うか） */
+  setSourceState(jobId: string, state: "ok" | SourceCase) {
+    const item = history.find((h) => h.jobId === jobId);
+    if (!item) return;
+    if (state === "ok") sourceCases.delete(jobId);
+    else sourceCases.set(jobId, state);
+    item.sourceAvailable = state === "ok";
+    item.sourceState = state === "ok" ? "ok" : state === "missing" ? "missing" : "changed";
+  },
+  /** 見本 の作例: 処理中と順番待ちを作るときのファイル（中身は見本の合成会議） */
+  demoPaths(): string[] {
+    return ["定例会議_1001.m4a", "1on1_1002.m4a", "顧客ヒアリング_1003.mp4"].map((n) => joinPath(osPath("/Users/example/Movies"), n));
   },
   /** 台本どおりの名前 */
   demoNames(): Record<string, string> {

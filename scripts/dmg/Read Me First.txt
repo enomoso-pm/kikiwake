@@ -1,6 +1,7 @@
 Getting started with Kikiwake
 
-Kikiwake processes audio and text only on this Mac. It uses the internet only to download the AI models the first time.
+Kikiwake processes audio and text only on this Mac. It uses the internet only to download the AI models the first time
+and to check for a new version at launch (it only asks for the latest version number). No audio or text is sent.
 
 The app is available in Japanese and English. It starts in your Mac's language, and you can switch at the top right of the window.
 Transcription currently supports Japanese recordings only.
@@ -22,9 +23,13 @@ Transcription currently supports Japanese recordings only.
    macOS 14:
      In Finder, Control-click "Kikiwake", choose "Open", then click "Open" again.
 
-   After the first time, it opens normally.
+   After the first time, it opens normally. After you replace it with a new version, you need to confirm it again.
 
 3. The first time, Kikiwake downloads the AI models (about 3.2 GB). Then just drag in a recording and name the speakers.
+
+4. When you use recordings in Documents, Desktop, Downloads, an external drive, or Google Drive, macOS may ask
+   whether Kikiwake can access files in that folder. Click "Allow" (Kikiwake reads the recording and saves the
+   transcript next to it).
 
 
 Help and documentation: https://github.com/enomoso-pm/kikiwake

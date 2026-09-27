@@ -71,7 +71,7 @@ const RowView = memo(function RowView({ row, color, query, current, flash, editi
     >
       <button
         type="button"
-        title={!playable ? t.history.playDisabled : playing ? t.transcript.stopLine : t.transcript.playLine}
+        title={!playable ? t.objects.playDisabled : playing ? t.transcript.stopLine : t.transcript.playLine}
         disabled={!playable}
         onClick={onPlay}
         style={{

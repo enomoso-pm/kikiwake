@@ -1,4 +1,4 @@
-// 表示の言語の切り替え（工程バーの右端。2026-09-27 決定）。工程バーの中の部品を動かさないよう、窓に対して重ねて置く（.lang-switch）
+// 表示の言語の切り替え（右の一番上の帯の右端。2026-09-27 決定）。帯の中の部品を動かさないよう、窓に対して重ねて置く（.lang-switch）
 import { LOCALES, setLocale, useLocale, useT, type Locale } from "../i18n";
 
 export function LanguageSwitch() {

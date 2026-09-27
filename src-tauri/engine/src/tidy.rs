@@ -3,7 +3,8 @@
 //! 作業フォルダ（~/Library/Application Support/Kikiwake/jobs/<録音ごとの ID>/）がそのまま履歴になる。
 //! その 9 割は取り出した音声で（68 分の録音で 144MB のうち 130MB）、消さないと 1 時間の会議を週 5 本で 1 年に約 30GB たまる。
 //! - 取り出した音声（audio.wav・取り出し途中の audio.part.wav）と行の再生の切り抜き（clips/）は、その録音を使い終えたら消す。
-//!   使い終えた＝別の録音を始めたとき・アプリを終えるとき（落ちて消せなかったぶんは次に開いたとき）。
+//!   使い終えた＝別の録音を始めたとき・別の録音を開いたとき・アプリを終えるとき（落ちて消せなかったぶんは次に開いたとき）。
+//!   処理中の録音と、画面で見ている録音には触らない（2026-09-27。処理中にほかの録音を開ける形にしたため。keep で渡す）
 //!   書き起こし・話者の判定・サンプルの声・付けた名前・手直しは残す（68 分の録音で約 9MB）。同じ録音を開き直すと、
 //!   元の録音から音声を取り出し直すだけで戻る（68 分の録音で 1.2 秒）
 //! - 作業フォルダを丸ごと消すのは、利用者が履歴から消したときだけ（history.rs）。前は 30 日選び直していない録音を丸ごと消していた
@@ -59,9 +60,9 @@ pub(crate) fn is_job_id(name: &str) -> bool {
     !name.is_empty() && name.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// 作業フォルダの、取り出した音声と行の再生の切り抜きを消す。keep の録音（いま使っている録音）には触らない。
+/// 作業フォルダの、取り出した音声と行の再生の切り抜きを消す。keep の録音（処理中の録音・画面で見ている録音）には触らない。
 /// 書き起こしなどは残す（作業フォルダを丸ごと消すのは、利用者が履歴から消したときだけ）
-pub fn tidy_jobs(paths: &Paths, keep: Option<&str>) -> Tidied {
+pub fn tidy_jobs(paths: &Paths, keep: &[&str]) -> Tidied {
     let mut t = Tidied::default();
     let Ok(rd) = fs::read_dir(paths.jobs()) else {
         return t;
@@ -69,7 +70,7 @@ pub fn tidy_jobs(paths: &Paths, keep: Option<&str>) -> Tidied {
     for e in rd.flatten() {
         let dir = e.path();
         let id = e.file_name().to_string_lossy().into_owned();
-        if !dir.is_dir() || !is_job_id(&id) || keep == Some(id.as_str()) {
+        if !dir.is_dir() || !is_job_id(&id) || keep.contains(&id.as_str()) {
             continue;
         }
         let mut removed = false;
@@ -136,14 +137,17 @@ mod tests {
         let now = SystemTime::now();
         let a = job(&paths, "aaaa", 1, now);
         let b = job(&paths, "bbbb", 1, now);
-        let t = tidy_jobs(&paths, Some("bbbb"));
+        let c = job(&paths, "cccc", 1, now);
+        let t = tidy_jobs(&paths, &["bbbb", "cccc"]);
         assert_eq!(t, Tidied { audio: 1, bytes: 1100 });
         assert!(!a.join("audio.wav").exists() && !a.join("clips").exists());
         assert!(a.join("asr.json").exists() && a.join("samples/話者A_1.wav").exists() && a.join("source.json").exists());
-        // いま使っている録音には触らない
-        assert!(b.join("audio.wav").exists() && b.join("clips/10_20.wav").exists());
+        // いま使っている録音（処理中の録音と、画面で見ている録音）には触らない
+        for d in [&b, &c] {
+            assert!(d.join("audio.wav").exists() && d.join("clips/10_20.wav").exists());
+        }
         // もう一度掃除しても何も消さない
-        assert!(tidy_jobs(&paths, Some("bbbb")).is_empty());
+        assert!(tidy_jobs(&paths, &["bbbb", "cccc"]).is_empty());
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -158,7 +162,7 @@ mod tests {
         fs::create_dir_all(paths.jobs().join("not-a-job/clips")).unwrap();
         fs::write(paths.jobs().join("not-a-job/audio.wav"), b"x").unwrap();
         fs::write(paths.jobs().join("memo.txt"), b"x").unwrap();
-        let t = tidy_jobs(&paths, None);
+        let t = tidy_jobs(&paths, &[]);
         assert_eq!(t.audio, 1);
         assert!(old.join("asr.json").exists() && old.join("source.json").exists() && old.join("samples/話者A_1.wav").exists());
         assert!(!old.join("audio.wav").exists());
@@ -169,6 +173,6 @@ mod tests {
     #[test]
     fn missing_jobs_folder_is_fine() {
         let root = tmp("none");
-        assert!(tidy_jobs(&paths_in(&root), None).is_empty());
+        assert!(tidy_jobs(&paths_in(&root), &[]).is_empty());
     }
 }

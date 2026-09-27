@@ -19,7 +19,7 @@ const doneJob = {
 };
 
 describe("閉じたときの状態（約束 版8）", () => {
-  it("名前付け・結果・完了の画面でだけ作り、戻すと同じ手直しになる", () => {
+  it("話者・文字起こしのタブでだけ作り、戻すと同じ手直しになる", () => {
     setState({
       ...resultInitial(),
       job: doneJob,
@@ -46,9 +46,7 @@ describe("閉じたときの状態（約束 版8）", () => {
     expect(back.saved).toEqual({ files: ["/Users/example/Desktop/定例_文字起こし/transcript_named.md"] });
     expect(back.savedEdits).toBe("{\"x\":1}");
 
-    // 完了の画面は結果の画面に戻す。名前付けの画面はそのまま
-    setState({ screen: "done" });
-    expect(draftOf(getState(), false)?.screen).toBe("result");
+    // 話者のタブ（名前付け）はそのまま
     setState({ screen: "naming" });
     expect(draftOf(getState(), false)?.screen).toBe("naming");
     // 処理中・ほかの画面・処理が終わっていない録音では作らない
@@ -60,6 +58,15 @@ describe("閉じたときの状態（約束 版8）", () => {
 
   it("欠けた・古い形でも戻せる（無い所は初めの状態）", () => {
     const back = stateFromDraft({ screen: "naming", unsaved: false });
-    expect(back).toEqual({ lineNames: {}, confirmed: {}, textHistory: {}, hidden: {}, savedEdits: null, saved: null });
+    expect(back).toEqual({ lineNames: {}, confirmed: {}, textHistory: {}, hidden: {}, savedEdits: null, saved: null, savedOnce: false });
+  });
+
+  it("版9: 保存したことがある（保存したあとで名前を変えて「保存しました」が消えても残る）。前の版の状態は保存したファイルの記録で", () => {
+    setState({ ...resultInitial(), job: doneJob, screen: "result", saved: null, savedOnce: true });
+    const d = draftOf(getState(), true);
+    expect(d?.savedOnce).toBe(true);
+    expect(stateFromDraft(JSON.parse(JSON.stringify(d))).savedOnce).toBe(true);
+    expect(stateFromDraft({ screen: "result", unsaved: false, savedFiles: ["/x/transcript.md"] }).savedOnce).toBe(true);
+    expect(stateFromDraft({ screen: "result", unsaved: false, savedFiles: [] }).savedOnce).toBe(false);
   });
 });

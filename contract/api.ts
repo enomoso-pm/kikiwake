@@ -21,6 +21,7 @@ import type {
   SpeakerCard,
   TranscriptView,
   UnresolvedHint,
+  UpdateInfo,
 } from "./types";
 
 export type Unsubscribe = () => void;
@@ -114,4 +115,13 @@ export interface KikiwakeApi {
   relinkSource(jobId: string, path: string): Promise<HistoryOpened>;
   /** 閉じたときの状態を作業フォルダに置く（変わるたびに呼ぶ）。開き直すと JobDone.draft・HistoryOpened.draft で戻る */
   saveDraft(jobId: string, draft: JobDraft): Promise<void>;
+
+  // ---- 新しい版の知らせ（版10） ----
+  /**
+   * 新しい版があるか（起動したときに一度だけ呼ぶ）。GitHub の最新のリリースに、エンジンが尋ねる（画面は通信しない）。
+   * 無い・確かめられない（ネットにつながらない・まだ公開していない など）ときは null。エラーにはしない
+   */
+  checkUpdate(): Promise<UpdateInfo | null>;
+  /** その版のリリースのページをブラウザで開く（URL はエンジンが版の番号から作る） */
+  openReleasePage(version: string): Promise<void>;
 }

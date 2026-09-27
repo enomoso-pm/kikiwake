@@ -2,7 +2,8 @@
 //! 画面側の実装は ui/src/api/tauri.ts（invoke とイベント）。関数名は約束の名前をそのまま snake_case にしたもの。
 //! イベント: model-progress・job-progress・job-done・job-failed（中身は約束の ModelInfo・JobProgress・JobDone・JobFailed）、
 //! close-requested（約束 版5。処理中に窓を閉じようとした。版8 で、保存していない手直しがあるときは確かめなくなった）、
-//! file-drag（約束 版6。ファイルのドラッグが窓の上にある間の位置。中身は約束の FileDragOver）
+//! file-drag（約束 版6。ファイルのドラッグが窓の上にある間の位置。中身は約束の FileDragOver）。
+//! 新しい版の確認（約束 版10）はエンジンが GitHub に尋ねる（画面は通信しない）
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -15,10 +16,10 @@ use kikiwake_core::unresolved::UnresolvedHint;
 use kikiwake_core::view::SpeakerCard;
 use kikiwake_engine::types::{
     EnvironmentCheck, Events, FileInfo, HistoryItem, HistoryOpened, JobDone, JobFailed, JobProgress, JobStarted, ModelInfo, SaveRequest,
-    TranscriptOut,
+    TranscriptOut, UpdateInfo,
 };
 use kikiwake_engine::job::remembered_locale;
-use kikiwake_engine::{env, files, history, models, results, AppError, Engine, Paths};
+use kikiwake_engine::{env, files, history, models, results, update, AppError, Engine, Paths};
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, PhysicalPosition, RunEvent, Runtime, State, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
 
@@ -240,6 +241,30 @@ fn mac_locale() -> Lang {
     Lang::default()
 }
 
+// ---- 新しい版の知らせ（約束 版10） ----
+
+/// 新しい版があるか（起動したときに画面が一度だけ呼ぶ）。無い・確かめられないときは None（エラーにしない）
+#[tauri::command]
+async fn check_update(app: AppHandle, state: State<'_, AppState>) -> R<Option<UpdateInfo>> {
+    let current = app.package_info().version.to_string();
+    let paths = state.engine.paths.clone();
+    // 問い合わせは最長 20 秒ほど待つので、画面の関数を受ける所を止めないよう別のスレッドで
+    Ok(tauri::async_runtime::spawn_blocking(move || update::check_update(&paths, &current)).await.unwrap_or(None))
+}
+
+/// その版のリリースのページをブラウザで開く（URL は版の番号から作る。画面から URL は受けない）
+#[tauri::command]
+async fn open_release_page(version: String) -> R<()> {
+    if update::parse_version(&version).is_none() {
+        return Err(AppError::engine_failed().with_detail(format!("版の番号が正しくない: {version}")));
+    }
+    std::process::Command::new("/usr/bin/open")
+        .arg(update::release_page(&version))
+        .status()
+        .map_err(|e| AppError::engine_failed().with_detail(format!("ブラウザを開けない: {e}")))?;
+    Ok(())
+}
+
 /// 処理を止めてアプリを閉じる（画面の「閉じる確認」で「閉じる」を選んだとき）
 #[tauri::command]
 async fn close_app(app: AppHandle, state: State<'_, AppState>) -> R<()> {
@@ -281,7 +306,9 @@ macro_rules! handlers {
             relink_source,
             save_draft,
             set_locale,
-            close_app
+            close_app,
+            check_update,
+            open_release_page
             $(, $extra)*
         ]
     };
@@ -303,6 +330,7 @@ pub fn run() {
             dev::dev_read,
             dev::dev_exists,
             dev::dev_rename,
+            dev::dev_touch,
             dev::dev_write,
             dev::dev_screenshot,
             dev::dev_menu,
@@ -363,7 +391,17 @@ pub fn run() {
             let _ = handle.emit("close-requested", ());
         }
         // 終わるときは、動いているエンジン（書き起こしなど）とダウンロードを止め、取り出した音声を消す（最大 5 秒待つ。engine の tidy.rs）
-        RunEvent::Exit => handle.state::<AppState>().engine.finish(Duration::from_secs(5)),
+        RunEvent::Exit => {
+            handle.state::<AppState>().engine.finish(Duration::from_secs(5));
+            // 開発用のビルドの操作役: NG があれば 1 で終わる（Tauri は 0 で抜けるため）
+            #[cfg(debug_assertions)]
+            {
+                let code = dev::EXIT_CODE.load(Ordering::SeqCst);
+                if code != 0 {
+                    std::process::exit(code);
+                }
+            }
+        }
         _ => {}
     });
 }

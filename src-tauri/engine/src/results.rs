@@ -40,7 +40,9 @@ pub(crate) fn names_of(job: &JobDir) -> Option<Names> {
 }
 
 pub fn get_speakers(engine: &Engine, job_id: &str) -> Result<Vec<SpeakerCard>, AppError> {
-    load(&JobDir::open(&engine.paths, job_id)?, "speakers.json")
+    let job = JobDir::open(&engine.paths, job_id)?;
+    engine.set_viewing(job_id);
+    load(&job, "speakers.json")
 }
 
 pub fn get_unresolved_hints(engine: &Engine, job_id: &str) -> Result<Vec<UnresolvedHint>, AppError> {
@@ -57,6 +59,7 @@ fn named_view(p: &Parts, names: &Names) -> TranscriptView {
 /// 空の名前は付けていない扱い。行は名前でまとめない（id・区切りは名前付けの前と同じ）
 pub fn apply_names(engine: &Engine, job_id: &str, names: &Names) -> Result<TranscriptOut, AppError> {
     let job = JobDir::open(&engine.paths, job_id)?;
+    engine.set_viewing(job_id);
     let p = parts(&job)?;
     let names = lines::clean_names(Some(names));
     fs::write(job.file("names.json"), pyjson::dumps(&names)).map_err(|e| io_error(&e, "names.json"))?;
@@ -75,6 +78,7 @@ pub fn apply_names(engine: &Engine, job_id: &str, names: &Names) -> Result<Trans
 /// 結果の行。named で名前が付いていれば実名版、そうでなければラベル版
 pub fn get_transcript(engine: &Engine, job_id: &str, named: bool) -> Result<TranscriptOut, AppError> {
     let job = JobDir::open(&engine.paths, job_id)?;
+    engine.set_viewing(job_id);
     let view = match (named, names_of(&job)) {
         (true, Some(names)) => named_view(&parts(&job)?, &names),
         _ => load(&job, "view_transcript.json")?,
@@ -94,9 +98,11 @@ pub fn save_outputs(engine: &Engine, job_id: &str, req: &SaveRequest) -> Result<
     lines::write_files(Path::new(&req.dir), &files, req.overwrite.unwrap_or(false)).map_err(|e| io_error(&e, &req.dir))
 }
 
-/// 録音の start〜end 秒を切り出した WAV（結果の画面の行の再生）。同じ範囲は前に作ったものを使う
+/// 録音の start〜end 秒を切り出した WAV（結果の画面の行の再生）。同じ範囲は前に作ったものを使う。
+/// 取り出した音声が掃除で消えていたら（別の録音を始めた・開いた）、元ファイルから取り出し直す（68 分の録音で 1.2 秒）
 pub fn recording_clip(engine: &Engine, job_id: &str, start: f64, end: f64) -> Result<PathBuf, AppError> {
     let job = JobDir::open(&engine.paths, job_id)?;
+    engine.set_viewing(job_id);
     let dur = job.source()?.duration_sec;
     let (s, e) = (start.max(0.0), end.min(if dur > 0.0 { dur } else { end }));
     if !(e > s) {
@@ -106,6 +112,9 @@ pub fn recording_clip(engine: &Engine, job_id: &str, start: f64, end: f64) -> Re
     fs::create_dir_all(&dir).map_err(|er| io_error(&er, "clips"))?;
     let dst = dir.join(format!("{}_{}.wav", (s * 1000.0).round() as u64, (e * 1000.0).round() as u64));
     if !dst.is_file() {
+        if !crate::history::ensure_audio(engine, &job) {
+            return Err(AppError::file_not_found().with_detail("元ファイルが無い・変わったので、行を再生できない"));
+        }
         wav::cut(&job.audio(), s, e, &dst, 0.0, e - s).map_err(|er| io_error(&er, "行の再生"))?;
     }
     Ok(dst)

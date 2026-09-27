@@ -92,6 +92,17 @@ pub struct FileInfo {
     pub estimate: Estimate,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previous: Option<Previous>,
+    /// 版9: 同じ場所の録音を前に文字起こししていて、そのあとファイルが変わった（大きさか更新日時が違う。新しい録音として扱う）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_changed: Option<PreviousChanged>,
+}
+
+/// 版9: 同じ場所の前の録音（そのあとファイルが変わった）
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviousChanged {
+    /// 前の録音を最後に処理した日（YYYY-MM-DD）
+    pub processed_at: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -157,6 +168,26 @@ pub enum HistoryStatus {
     Unfinished,
 }
 
+/// 版9: 元ファイルの状態。ok＝同じ場所に同じファイル（大きさ・更新日時も同じ）、missing＝場所にファイルが無い、
+/// changed＝場所にあるが大きさか更新日時が違う（編集した・書き出し直した・コピーし直した・クラウドの同期）
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceState {
+    Ok,
+    Missing,
+    Changed,
+}
+
+/// 版9: 付けた名前（一覧の行に「松本・田中ほか2人」と出す）
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NamedSpeakers {
+    /// 付けた名前。同じ名前を付けた話者は1つにまとめ、発言の多い順
+    pub names: Vec<String>,
+    /// 名前を付けていない話者の数
+    pub unnamed: usize,
+}
+
 /// contract の HistoryItem
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +212,13 @@ pub struct HistoryItem {
     pub source_available: bool,
     /// 途中のとき、話者の判定まで済んでいる（続きからは書き起こしから）
     pub diarization_kept: bool,
+    /// 版9: 元ファイルの状態（source_available は ok のときだけ true）
+    pub source_state: SourceState,
+    /// 版9: 文字起こしをファイルに保存したことがある（閉じたときの状態の savedOnce）
+    pub saved: bool,
+    /// 版9: 付けた名前（名前を確定していなければ省く）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub named_speakers: Option<NamedSpeakers>,
 }
 
 /// contract の HistoryOpened（openHistory・relinkSource の答え）: JobDone と同じ中身と、元ファイルがあるか
@@ -237,4 +275,24 @@ pub trait Events: Send + Sync {
     fn job_done(&self, d: &JobDone);
     fn job_failed(&self, f: &JobFailed);
     fn model_progress(&self, m: &ModelInfo);
+}
+
+// ---- 新しい版の知らせ（版10） ----------------------------------------------------------
+
+/// contract の UpdateInfo（checkUpdate の答え）: GitHub の最新のリリースが、今の版より新しいとき
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    /// 新しい版（例 "1.0.1"）
+    pub version: String,
+    /// 今の版
+    pub current: String,
+    /// リリースの題（例 "Kikiwake 1.0.1"）
+    pub title: String,
+    /// 更新内容（リリースの本文。Markdown の文字のまま）
+    pub notes: String,
+    /// 公開日（YYYY-MM-DD。分からなければ空）
+    pub published_at: String,
+    /// リリースのページ（版の番号から作る）
+    pub url: String,
 }
