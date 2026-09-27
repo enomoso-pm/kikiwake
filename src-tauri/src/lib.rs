@@ -1,21 +1,24 @@
 //! Kikiwake の外枠（Tauri）。画面（ui/）が呼ぶ関数（contract/api.ts の KikiwakeApi）を、処理の流れ（engine）につなぐ。
 //! 画面側の実装は ui/src/api/tauri.ts（invoke とイベント）。関数名は約束の名前をそのまま snake_case にしたもの。
 //! イベント: model-progress・job-progress・job-done・job-failed（中身は約束の ModelInfo・JobProgress・JobDone・JobFailed）、
-//! close-requested（約束 版5・版6。処理中か、保存していない手直しがあるときに窓を閉じようとした）、
+//! close-requested（約束 版5。処理中に窓を閉じようとした。版8 で、保存していない手直しがあるときは確かめなくなった）、
 //! file-drag（約束 版6。ファイルのドラッグが窓の上にある間の位置。中身は約束の FileDragOver）
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use kikiwake_core::lang::Lang;
 use kikiwake_core::lines::SaveResult;
 use kikiwake_core::merge::Names;
 use kikiwake_core::unresolved::UnresolvedHint;
 use kikiwake_core::view::SpeakerCard;
 use kikiwake_engine::types::{
-    EnvironmentCheck, Events, FileInfo, JobDone, JobFailed, JobProgress, JobStarted, ModelInfo, SaveRequest, TranscriptOut,
+    EnvironmentCheck, Events, FileInfo, HistoryItem, HistoryOpened, JobDone, JobFailed, JobProgress, JobStarted, ModelInfo, SaveRequest,
+    TranscriptOut,
 };
-use kikiwake_engine::{env, files, models, results, AppError, Engine, Paths};
+use kikiwake_engine::job::remembered_locale;
+use kikiwake_engine::{env, files, history, models, results, AppError, Engine, Paths};
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, PhysicalPosition, RunEvent, Runtime, State, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
 
@@ -40,15 +43,14 @@ struct AppState {
     engine: Arc<Engine>,
     /// closeApp が呼ばれた（このあとの閉じる・終わるは止めない）
     closing: AtomicBool,
-    /// 画面が「保存していない手直しがある」と知らせている（約束 版6 の setUnsavedChanges）
-    unsaved: AtomicBool,
 }
 
 impl AppState {
-    /// 閉じるのを止めて、画面に確かめてもらうか（処理中か保存していない手直しがあり、まだ closeApp が呼ばれていない）。
-    /// 画面が応えられなくなっても閉じられるよう、止めるのはこの2つのときだけ（2026-09-26 決定）
+    /// 閉じるのを止めて、画面に確かめてもらうか（処理中で、まだ closeApp が呼ばれていない）。
+    /// 画面が応えられなくなっても閉じられるよう、止めるのは処理中だけ。保存していない手直しは作業フォルダに残る（版8 の saveDraft）ので確かめない
+    /// （2026-09-27 決定。前は手直しがあるときも止めていた）
     fn should_confirm_close(&self) -> bool {
-        (self.engine.is_busy() || self.unsaved.load(Ordering::SeqCst)) && !self.closing.load(Ordering::SeqCst)
+        self.engine.is_busy() && !self.closing.load(Ordering::SeqCst)
     }
 }
 
@@ -100,8 +102,12 @@ async fn cancel_download(state: State<'_, AppState>) -> R<()> {
 // ---- 画面2 ファイル選択 ----
 
 #[tauri::command]
-async fn pick_media_file(app: AppHandle) -> R<Option<String>> {
-    let picked = app.dialog().file().add_filter("録音・録画", &files::SUPPORTED).blocking_pick_file();
+async fn pick_media_file(app: AppHandle, state: State<'_, AppState>) -> R<Option<String>> {
+    let kinds = match state.engine.locale() {
+        Lang::Ja => "録音・録画",
+        Lang::En => "Recordings",
+    };
+    let picked = app.dialog().file().add_filter(kinds, &files::SUPPORTED).blocking_pick_file();
     Ok(picked.and_then(|p| p.into_path().ok()).map(|p| p.display().to_string()))
 }
 
@@ -178,11 +184,60 @@ async fn reveal_in_file_manager(path: String) -> R<()> {
 
 // ---- 全体（約束 版5） ----
 
-/// 保存していない手直しがあるか（約束 版6）。true のあいだは、閉じる前に画面に確かめてもらう
+// ---- 履歴・閉じたときの状態（約束 版8） ----
+
 #[tauri::command]
-async fn set_unsaved_changes(state: State<'_, AppState>, unsaved: bool) -> R<()> {
-    state.unsaved.store(unsaved, Ordering::SeqCst);
+async fn list_history(state: State<'_, AppState>) -> R<Vec<HistoryItem>> {
+    Ok(history::list_history(&state.engine))
+}
+
+#[tauri::command]
+async fn open_history(state: State<'_, AppState>, job_id: String) -> R<HistoryOpened> {
+    history::open_history(&state.engine, &job_id)
+}
+
+#[tauri::command]
+async fn delete_history(state: State<'_, AppState>, job_id: String) -> R<()> {
+    history::delete_history(&state.engine, &job_id)
+}
+
+#[tauri::command]
+async fn relink_source(state: State<'_, AppState>, job_id: String, path: String) -> R<HistoryOpened> {
+    history::relink_source(&state.engine, &job_id, Path::new(&path))
+}
+
+#[tauri::command]
+async fn save_draft(state: State<'_, AppState>, job_id: String, draft: serde_json::Value) -> R<()> {
+    history::save_draft(&state.engine, &job_id, &draft)
+}
+
+/// 画面の言語（約束 版7）。Mac のメニューを作り直し、既定の保存先の名前と保存するファイルの中の言葉をこの言語にする。
+/// 次に開いたときのために覚え、メニューを最初からこの言語で作る。知らない言語は前のまま
+#[tauri::command]
+async fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) -> R<()> {
+    let Some(lang) = Lang::parse(&locale) else {
+        return Ok(());
+    };
+    if state.engine.set_locale(lang, true) {
+        let rebuilt = menu::build(&app, lang).and_then(|m| app.set_menu(m));
+        if let Err(e) = rebuilt {
+            return Err(AppError::engine_failed().with_detail(format!("メニューを作り直せない: {e}")));
+        }
+    }
     Ok(())
+}
+
+/// この Mac の言語（画面と同じ決め方: 並びの先頭が日本語なら日本語、それ以外は英語）。画面が知らせる前のメニューに使う
+fn mac_locale() -> Lang {
+    #[cfg(target_os = "macos")]
+    {
+        let langs = objc2_foundation::NSLocale::preferredLanguages();
+        let first = langs.firstObject().map(|s| s.to_string()).unwrap_or_default();
+        Lang::from_preferred(&first)
+    }
+    // Windows は Phase 3 で決める
+    #[cfg(not(target_os = "macos"))]
+    Lang::default()
 }
 
 /// 処理を止めてアプリを閉じる（画面の「閉じる確認」で「閉じる」を選んだとき）
@@ -197,7 +252,7 @@ async fn close_app(app: AppHandle, state: State<'_, AppState>) -> R<()> {
 /// 開発用のビルドだけの操作役（画面を自動で動かして確かめる。製品のビルドには入らない）
 #[cfg(debug_assertions)]
 mod dev;
-/// Mac のメニュー（日本語・「Kikiwake について」とライセンス）
+/// Mac のメニュー（画面の言語・「Kikiwake について」とライセンス）
 mod menu;
 
 /// 画面が呼べる関数の一覧（開発用のビルドでは dev の関数を足す）
@@ -220,7 +275,12 @@ macro_rules! handlers {
             save_outputs,
             recording_clip,
             reveal_in_file_manager,
-            set_unsaved_changes,
+            list_history,
+            open_history,
+            delete_history,
+            relink_source,
+            save_draft,
+            set_locale,
             close_app
             $(, $extra)*
         ]
@@ -229,6 +289,8 @@ macro_rules! handlers {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // メニューの最初の言語: 前に画面が知らせた言語 → この Mac の言語（画面と同じ決め方）。画面が起動して知らせたら合わせ直す
+    let initial = remembered_locale(&Paths::default_mac()).unwrap_or_else(mac_locale);
     let builder = tauri::Builder::default();
     #[cfg(debug_assertions)]
     let builder = {
@@ -239,8 +301,13 @@ pub fn run() {
             dev::dev_drag,
             dev::dev_close,
             dev::dev_read,
+            dev::dev_exists,
+            dev::dev_rename,
             dev::dev_write,
             dev::dev_screenshot,
+            dev::dev_menu,
+            dev::dev_native_menu,
+            dev::dev_resize,
             dev::dev_done
         ));
         match dev::plugin() {
@@ -252,21 +319,22 @@ pub fn run() {
     let builder = builder.invoke_handler(handlers!());
     let app = builder
         .plugin(tauri_plugin_dialog::init())
-        .menu(menu::build)
+        .menu(move |app| menu::build(app, initial))
         .on_menu_event(|app, e| menu::on_event(app, e.id().as_ref()))
-        .setup(|app| {
+        .setup(move |app| {
             let paths = Paths::default_mac();
             // サンプル音声・行の再生の WAV（作業フォルダの中）だけを画面で再生できるようにする
             std::fs::create_dir_all(paths.jobs())?;
             app.asset_protocol_scope().allow_directory(paths.jobs(), true)?;
             let engine = Engine::new(paths, Arc::new(TauriEvents(app.handle().clone())));
-            // 前に消し損ねた作業ファイルと、30 日選び直していない録音を消す（画面が処理を始める前に。engine の tidy.rs）
+            engine.set_locale(initial, false);
+            // 前の置き場所（Caches）の作業フォルダを移し、前に消し損ねた音声と切り抜きを消す（画面が処理を始める前に。engine の history.rs・tidy.rs）
             engine.tidy_on_start();
-            app.manage(AppState { engine, closing: AtomicBool::new(false), unsaved: AtomicBool::new(false) });
+            app.manage(AppState { engine, closing: AtomicBool::new(false) });
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // 処理中か、保存していない手直しがあるときに窓を閉じようとしたら、閉じずに画面に知らせる（画面が確かめて closeApp を呼ぶ）
+            // 処理中に窓を閉じようとしたら、閉じずに画面に知らせる（画面が確かめて closeApp を呼ぶ）
             WindowEvent::CloseRequested { api, .. } => {
                 if window.state::<AppState>().should_confirm_close() {
                     api.prevent_close();
@@ -289,7 +357,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Kikiwake を起動できない");
     app.run(|handle, event| match event {
-        // ⌘Q など、処理中か保存していない手直しがあるときにアプリを終わろうとしたときも、画面に確かめてもらう（closeApp からの終わりは止めない）
+        // ⌘Q など、処理中にアプリを終わろうとしたときも、画面に確かめてもらう（closeApp からの終わりは止めない）
         RunEvent::ExitRequested { api, code, .. } if code.is_none() && handle.state::<AppState>().should_confirm_close() => {
             api.prevent_exit();
             let _ = handle.emit("close-requested", ());

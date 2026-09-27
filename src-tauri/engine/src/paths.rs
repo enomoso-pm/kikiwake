@@ -1,5 +1,5 @@
-//! 置き場所。モデル・作業用のファイル・ログ・同梱したエンジン。
-//! 作業用のファイルは同期フォルダ（Google ドライブ等）に置かない。
+//! 置き場所。モデル・作業フォルダ（履歴）・ログ・同梱したエンジン。
+//! 作業用のファイルは同期フォルダ（Google ドライブ等）に置かない（Application Support は同期されない）。
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
@@ -8,10 +8,14 @@ use crate::error::AppError;
 pub struct Paths {
     /// モデル（~/Library/Application Support/Kikiwake/models）
     pub models: PathBuf,
-    /// アプリのデータ（この Mac での処理の速さなど。~/Library/Application Support/Kikiwake）
+    /// アプリのデータ（この Mac での処理の速さ・覚えた画面の言語など。~/Library/Application Support/Kikiwake）
     pub app_data: PathBuf,
-    /// 作業用のファイル（~/Library/Caches/Kikiwake）
-    pub cache: PathBuf,
+    /// 作業フォルダ（jobs/<録音ごとの ID>/）の置き場所の親。~/Library/Application Support/Kikiwake。作業フォルダがそのまま履歴になる。
+    /// 2026-09-27 に Caches から移した（macOS はディスクが足りないと Caches を消し、Time Machine にも入らないため）
+    pub work: PathBuf,
+    /// 前の置き場所（~/Library/Caches/Kikiwake）。そこに作業フォルダがあれば、開いたときに work へ移す（history.rs）。
+    /// 確かめ用に KIKIWAKE_CACHE_DIR で置き場所を変えたときは無し（いつもの Kikiwake の作業フォルダを持ってこない）
+    pub legacy_work: Option<PathBuf>,
     /// ログ（~/Library/Logs/Kikiwake。段階・時刻・エラーだけ。文字起こしの中身は書かない）
     pub logs: PathBuf,
     /// 同梱したエンジン（whisper-cli・kikiwake-diar・decode-avf）のあるフォルダ
@@ -31,21 +35,27 @@ fn env_path(key: &str) -> Option<PathBuf> {
 
 impl Paths {
     /// Mac の既定の置き場所。確かめ用に環境変数で差し替えられる
-    /// （KIKIWAKE_MODELS_DIR・KIKIWAKE_CACHE_DIR・KIKIWAKE_ENGINES_DIR）
+    /// （KIKIWAKE_MODELS_DIR・KIKIWAKE_CACHE_DIR（作業フォルダ。名前は前のまま）・KIKIWAKE_ENGINES_DIR・KIKIWAKE_APP_DATA_DIR。
+    /// 最後のものは操作役が、この Mac の速さの記録と覚えた画面の言語を、いつもの Kikiwake と分けるため）
     pub fn default_mac() -> Self {
         let lib = home().join("Library");
-        let app_data = lib.join("Application Support").join("Kikiwake");
+        let test_data = env_path("KIKIWAKE_APP_DATA_DIR");
+        let app_data = test_data.clone().unwrap_or_else(|| lib.join("Application Support").join("Kikiwake"));
+        let work = env_path("KIKIWAKE_CACHE_DIR");
         Self {
             models: env_path("KIKIWAKE_MODELS_DIR").unwrap_or_else(|| app_data.join("models")),
-            app_data,
-            cache: env_path("KIKIWAKE_CACHE_DIR").unwrap_or_else(|| lib.join("Caches").join("Kikiwake")),
+            app_data: app_data.clone(),
+            work: work.clone().unwrap_or_else(|| app_data.clone()),
+            // 確かめ用に置き場所を変えたときは、いつもの Kikiwake の作業フォルダを持ってこない
+            legacy_work: (work.is_none() && test_data.is_none()).then(|| lib.join("Caches").join("Kikiwake")),
             logs: lib.join("Logs").join("Kikiwake"),
             engines: env_path("KIKIWAKE_ENGINES_DIR").unwrap_or_else(find_engines_dir),
         }
     }
 
+    /// 作業フォルダ（＝履歴）の置き場所: ~/Library/Application Support/Kikiwake/jobs
     pub fn jobs(&self) -> PathBuf {
-        self.cache.join("jobs")
+        self.work.join("jobs")
     }
 
     /// 同梱したエンジンの実行ファイル。.app の中は名前のまま、開発中は src-tauri/binaries/<名前>-<目印>

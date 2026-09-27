@@ -1,5 +1,7 @@
 // 数と時間の書き方（UI 画面仕様書 ver1.1 §2.8）。
 // 録音の中の時刻（行・サンプルの時刻）は contract/format.ts の formatTimestamp を使う。ここはそれ以外
+// 言葉（分・時間・約・残り）は今の言語の辞書から（i18n）
+import { getT } from "../i18n";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -14,25 +16,27 @@ export function formatClock(sec: number): string {
 
 /** 分の数を「N分」「H時間M分」に（0分は書かない） */
 function minutesText(min: number): string {
-  if (min < 60) return `${min}分`;
+  const t = getT().time;
+  if (min < 60) return t.minutes(min);
   const h = Math.floor(min / 60);
   const m = min % 60;
-  return m ? `${h}時間${m}分` : `${h}時間`;
+  return m ? t.hoursMinutes(h, m) : t.hours(h);
 }
 
 /** 残り時間: 分に切り上げ。1分未満でも「約1分」 */
 export function formatRemaining(sec: number): string {
   const min = Math.max(1, Math.ceil(sec / 60));
-  return `残り 約${minutesText(min)}`;
+  return getT().time.remaining(minutesText(min));
 }
 
 /** 所要時間の目安: 「約 28〜36 分」「約 1時間40分〜2時間10分」 */
 export function formatEstimate(minSec: number, maxSec: number): string {
   const a = Math.max(1, Math.round(minSec / 60));
   const b = Math.max(a, Math.round(maxSec / 60));
-  if (b < 60) return a === b ? `約 ${a} 分` : `約 ${a}〜${b} 分`;
-  if (a === b) return `約 ${minutesText(a)}`;
-  return `約 ${minutesText(a)}〜${minutesText(b)}`;
+  const t = getT().time;
+  if (b < 60) return a === b ? t.aboutMinutes(a) : t.aboutMinutesRange(a, b);
+  if (a === b) return t.about(minutesText(a));
+  return t.aboutRange(minutesText(a), minutesText(b));
 }
 
 const GB = 1e9;
@@ -68,7 +72,7 @@ export function formatMonthDay(ymd: string | undefined): string | null {
   const month = Number(m[2]);
   const day = Number(m[3]);
   if (!month || !day) return null;
-  return `${month}月${day}日`;
+  return getT().time.monthDay(month, day);
 }
 
 /** 拡張子（小文字）。無ければ空 */
@@ -80,7 +84,7 @@ export function extensionOf(name: string): string {
 /** ファイルの形式の表示。m4a は「m4a（ボイスメモ）」 */
 export function fileFormatLabel(name: string): string {
   const ext = extensionOf(name);
-  return ext === "m4a" ? "m4a（ボイスメモ）" : ext;
+  return ext === "m4a" ? getT().time.voiceMemo : ext;
 }
 
 /** パスの最後の部分（Mac の / と Windows の \ の両方） */

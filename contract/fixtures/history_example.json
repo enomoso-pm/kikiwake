@@ -1,0 +1,53 @@
+[
+ {
+  "jobId": "5f1c2a9d0b7e4c31",
+  "name": "要件レビュー_合成.wav",
+  "path": "/Users/example/Movies/要件レビュー_合成.wav",
+  "durationSec": 163.74,
+  "processedAt": "2026-09-27",
+  "status": "done",
+  "speakers": 4,
+  "named": true,
+  "unsavedEdits": true,
+  "sourceAvailable": true,
+  "diarizationKept": true
+ },
+ {
+  "jobId": "a04d9e7c61b2f835",
+  "name": "定例会議_0926.m4a",
+  "path": "/Users/example/Documents/録音/定例会議_0926.m4a",
+  "durationSec": 4068.82,
+  "processedAt": "2026-09-26",
+  "status": "unfinished",
+  "speakers": 5,
+  "named": false,
+  "unsavedEdits": false,
+  "sourceAvailable": true,
+  "diarizationKept": true
+ },
+ {
+  "jobId": "3b8e05f2c9d14a67",
+  "name": "顧客インタビュー.mp4",
+  "path": "/Volumes/外付け/インタビュー/顧客インタビュー.mp4",
+  "durationSec": 2797.14,
+  "processedAt": "2026-09-20",
+  "status": "done",
+  "speakers": 2,
+  "named": true,
+  "unsavedEdits": false,
+  "sourceAvailable": false,
+  "diarizationKept": true
+ },
+ {
+  "jobId": "d2e7a1c09f3b5846",
+  "name": "ボイスメモ 3.m4a",
+  "path": "/Users/example/Desktop/ボイスメモ 3.m4a",
+  "durationSec": 612.3,
+  "processedAt": "2026-09-18",
+  "status": "unfinished",
+  "named": false,
+  "unsavedEdits": false,
+  "sourceAvailable": true,
+  "diarizationKept": false
+ }
+]

@@ -2,6 +2,13 @@
 (() => {
   if (window.top !== window) return;
   const kk = (window.__kk = window.__kk || { csp: [], errors: [], media: [] });
+  // 画面の言語は前に選んだものを覚えている（localStorage）。操作役は毎回この Mac の言語から始める
+  // （筋書き en は scripts/e2e_mac.sh が -AppleLanguages (en-US) で起動して、英語の Mac のまねをする）
+  try {
+    localStorage.removeItem("kikiwake.locale");
+  } catch {
+    // 読めない所では何もしない
+  }
   document.addEventListener("securitypolicyviolation", (e) => kk.csp.push(`${e.violatedDirective} ${e.blockedURI}`));
   window.addEventListener("error", (e) => kk.errors.push(`error: ${e.message}`));
   window.addEventListener("unhandledrejection", (e) => {

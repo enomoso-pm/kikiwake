@@ -5,6 +5,7 @@ import type {
   AppError,
   EnvironmentCheck,
   FileInfo,
+  HistoryItem,
   ModelInfo,
   Names,
   SaveFormat,
@@ -14,12 +15,16 @@ import type {
   UnresolvedHint,
 } from "@contract/types";
 
-/** done は完了の画面（準備と同じく工程の外。2026-09-26 決定。仕様書に無い） */
-export type Screen = "setup" | "file" | "processing" | "naming" | "result" | "done";
+/**
+ * done は完了の画面（準備と同じく工程の外。2026-09-26 決定。仕様書に無い）。
+ * history は履歴の画面（ファイルの画面から入る。工程バーでは「1 ファイル」の中。2026-09-27 決定。仕様書に無い）
+ */
+export type Screen = "setup" | "file" | "history" | "processing" | "naming" | "result" | "done";
 
-export const SCREENS: readonly Screen[] = ["setup", "file", "processing", "naming", "result", "done"];
+export const SCREENS: readonly Screen[] = ["setup", "file", "history", "processing", "naming", "result", "done"];
 
-export type DialogKind = "cancel" | "close" | "closeUnsaved" | "leaveUnsaved" | "revertAll" | "overwrite";
+/** 保存していない手直しの確かめ（閉じる・別の録音へ移る）は 2026-09-27 にやめた（手直しは作業フォルダに残る。約束 版8） */
+export type DialogKind = "cancel" | "close" | "revertAll" | "overwrite" | "deleteHistory";
 
 export interface JobView {
   /** startJob が返るまでは null */
@@ -66,6 +71,18 @@ export interface AppState {
   fileBusy: boolean;
   dragOver: boolean;
   startError: AppError | null;
+
+  // 履歴（版8）
+  /** 一覧。読む前は null */
+  history: HistoryItem[] | null;
+  historyError: AppError | null;
+  /** 開いている（音声を取り出している）録音の jobId */
+  historyOpening: string | null;
+  /** 消す前に確かめている録音 */
+  historyDelete: HistoryItem | null;
+  /** 結果の画面で行を再生できるか（履歴から元ファイルの無い録音を開いたら false） */
+  playable: boolean;
+  relinkError: AppError | null;
 
   // 3 処理中
   job: JobView | null;
@@ -175,6 +192,13 @@ export const useApp = create<AppState>()(() => ({
   fileBusy: false,
   dragOver: false,
   startError: null,
+
+  history: null,
+  historyError: null,
+  historyOpening: null,
+  historyDelete: null,
+  playable: true,
+  relinkError: null,
 
   job: null,
 

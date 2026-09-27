@@ -142,6 +142,54 @@ pub struct JobDone {
     /// 版6: この録音で前に確定した名前（names.json）。名前付けの画面に最初から入れておく
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub names: Option<kikiwake_core::merge::Names>,
+    /// 版8: 閉じたときの状態（画面が saveDraft で渡したもの。中身は画面が決める）。書き起こしが変わっていれば省く
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<serde_json::Value>,
+}
+
+// ---- 履歴（版8） ---------------------------------------------------------------------
+
+/// 履歴の1件の状態: 書き終えた（done）か、途中（中止・止まった・処理中に閉じた）か
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HistoryStatus {
+    Done,
+    Unfinished,
+}
+
+/// contract の HistoryItem
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryItem {
+    pub job_id: String,
+    /// 元ファイルの名前
+    pub name: String,
+    /// 元ファイルの場所（処理したとき）
+    pub path: String,
+    pub duration_sec: f64,
+    /// 最後に処理した日（YYYY-MM-DD）
+    pub processed_at: String,
+    pub status: HistoryStatus,
+    /// 話者のラベルの数（話者の判定まで済んでいれば）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speakers: Option<usize>,
+    /// 名前を確定している
+    pub named: bool,
+    /// ファイルに保存していない手直しがある（閉じたときの状態の unsaved）
+    pub unsaved_edits: bool,
+    /// 元ファイルが今もある（同じ場所・大きさ・更新日時）。無ければ再生と続きからの再開ができない
+    pub source_available: bool,
+    /// 途中のとき、話者の判定まで済んでいる（続きからは書き起こしから）
+    pub diarization_kept: bool,
+}
+
+/// contract の HistoryOpened（openHistory・relinkSource の答え）: JobDone と同じ中身と、元ファイルがあるか
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryOpened {
+    #[serde(flatten)]
+    pub done: JobDone,
+    pub source_available: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

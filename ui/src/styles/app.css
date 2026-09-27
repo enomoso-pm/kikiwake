@@ -578,3 +578,34 @@ textarea::placeholder {
 .icon-btn:hover {
   background: var(--bg-muted);
 }
+
+/* 表示の言語の切り替え（2026-09-27）。工程バー（高さ 52px・右の余白 32px）の右端に、窓に対して重ねて置く。
+   ダイアログ・詳細・名前の選択（z-index 30 以上）の下になる */
+.lang-switch {
+  position: fixed;
+  top: 12px;
+  right: 32px;
+  z-index: 20;
+  height: 28px;
+  padding: 0 26px 0 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: #fff
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235d6168' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 9px center;
+  border: 1px solid var(--line-input);
+  border-radius: 6px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.lang-switch:hover {
+  border-color: var(--ink-4);
+}
+
+.lang-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

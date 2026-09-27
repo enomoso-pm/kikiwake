@@ -10,11 +10,13 @@
 //!     kikiwake-dev screen <dir>…                      画面向け一式（結果の表示・話者カード・確認用の手がかり・保存するファイル）
 //!     kikiwake-dev repeats <turns.json|-> <ojf.json>…  繰り返しの検出（本文は出さない。範囲・回数・話していた秒数だけ）
 //!     kikiwake-dev save <dir>…                        版3の保存（dir の edits.json の手直しを当てて dir/saved/ に md・txt・json）
+//!     kikiwake-dev save-en <dir>…                     版7の英語の保存（同じく dir/saved_en/ に。日本語の save は変えない）
 
 use std::fs;
 use std::process::ExitCode;
 
 use kikiwake_core::merge::{self, Names};
+use kikiwake_core::lang::Lang;
 use kikiwake_core::lines::{self, LineEdits, SaveFormat};
 use kikiwake_core::{diar, patterns, pycompat, pyjson, repeat, speakers, unresolved, view, whisper};
 use serde_json::{Value, json};
@@ -179,7 +181,7 @@ fn screen(dir: &std::path::Path) -> std::io::Result<()> {
     let hints = unresolved::unresolved_hints(&words, &turns, Some(&audio), Some(&sdir), "samples/")?;
     fs::write(dir.join("unresolved_hints.json"), pyjson::dumps(&hints))?;
     let none = LineEdits::default();
-    for (_, content) in lines::save_files(&words, &turns, None, &none, &meta, &[SaveFormat::Md]) {
+    for (_, content) in lines::save_files(&words, &turns, None, &none, &meta, &[SaveFormat::Md], Lang::Ja) {
         fs::write(dir.join("saved_transcript.md"), content)?;
     }
     if let Some(n) = &names {
@@ -187,7 +189,7 @@ fn screen(dir: &std::path::Path) -> std::io::Result<()> {
         let named: Vec<lines::Line> = lines::lines(&words, &turns, Some(n)).into_iter().map(|r| r.line).collect();
         let ttn = merge::talk_time(&turns, Some(n));
         fs::write(dir.join("view_transcript_named.json"), pyjson::dumps(&view::transcript_view(&named, &ttn, &meta, dur, true)))?;
-        for (_, content) in lines::save_files(&words, &turns, Some(n), &none, &meta, &[SaveFormat::Md]) {
+        for (_, content) in lines::save_files(&words, &turns, Some(n), &none, &meta, &[SaveFormat::Md], Lang::Ja) {
             fs::write(dir.join("saved_transcript_named.md"), content)?;
         }
     }
@@ -195,8 +197,8 @@ fn screen(dir: &std::path::Path) -> std::io::Result<()> {
 }
 
 /// dir の words.json・diarization.json・meta.json・names.json（あれば）・edits.json（あれば）から、
-/// 手直しを当てた保存のファイル（md・txt・json）を dir/saved/ に書く。
-fn save(dir: &std::path::Path) -> std::io::Result<Vec<String>> {
+/// 手直しを当てた保存のファイル（md・txt・json）を dir/saved/（英語は dir/saved_en/）に書く。
+fn save(dir: &std::path::Path, lang: Lang) -> std::io::Result<Vec<String>> {
     let words: Vec<merge::Word> = merge::load_json(&dir.join("words.json"))?;
     let turns: Vec<merge::Turn> = merge::load_json(&dir.join("diarization.json"))?;
     let meta: merge::Meta =
@@ -205,15 +207,15 @@ fn save(dir: &std::path::Path) -> std::io::Result<Vec<String>> {
         if dir.join("names.json").exists() { Some(merge::load_json(&dir.join("names.json"))?) } else { None };
     let edits: LineEdits =
         if dir.join("edits.json").exists() { merge::load_json(&dir.join("edits.json"))? } else { LineEdits::default() };
-    let files = lines::save_files(&words, &turns, names.as_ref(), &edits, &meta, &[SaveFormat::Md, SaveFormat::Txt, SaveFormat::Json]);
-    let out = dir.join("saved");
+    let files = lines::save_files(&words, &turns, names.as_ref(), &edits, &meta, &[SaveFormat::Md, SaveFormat::Txt, SaveFormat::Json], lang);
+    let out = dir.join(if lang == Lang::En { "saved_en" } else { "saved" });
     let _ = fs::remove_dir_all(&out);
     Ok(lines::write_files(&out, &files, false)?.files)
 }
 
-fn cmd_save(dirs: &[String]) {
+fn cmd_save(dirs: &[String], lang: Lang) {
     for d in dirs {
-        let r = save(std::path::Path::new(d));
+        let r = save(std::path::Path::new(d), lang);
         println!("{}", json!({"dir": d, "files": r.as_ref().ok(), "error": r.err().map(|e| e.to_string())}));
     }
 }
@@ -253,7 +255,8 @@ fn main() -> ExitCode {
         Some("assign") => cmd_assign(&args[1], &args[2], &args[3]),
         Some("screen") => cmd_screen(&args[1..]),
         Some("repeats") => cmd_repeats(&args[1], &args[2..]),
-        Some("save") => cmd_save(&args[1..]),
+        Some("save") => cmd_save(&args[1..], Lang::Ja),
+        Some("save-en") => cmd_save(&args[1..], Lang::En),
         Some("json-roundtrip") => {
             if !cmd_json_roundtrip(&args[1..]) {
                 return ExitCode::FAILURE;

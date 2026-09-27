@@ -2,6 +2,7 @@
 //! 画面が呼ぶ関数（contract/api.ts）と同じものを呼び、イベントと結果を1行ずつ JSON で出す。
 //!
 //!   kikiwake-headless env
+//!   kikiwake-headless tidy        （開いたときの引き継ぎ（Caches → Application Support）と掃除だけ。件数と大きさを出す）
 //!   kikiwake-headless models
 //!   kikiwake-headless download [whisper-large-v3 nemotron-3-diarization]   （取り終えるまで待つ）
 //!   kikiwake-headless inspect <録音>
@@ -12,7 +13,7 @@
 //!   kikiwake-headless clip <ID> <開始秒> <終了秒>
 //!   kikiwake-headless notices <whisper の -ojf JSON> <話者区間の JSON> <録音の長さ（秒）>   （繰り返しの知らせの判定。時刻と秒数だけ出す）
 //!
-//! 置き場所は環境変数で差し替えられる（KIKIWAKE_MODELS_DIR・KIKIWAKE_CACHE_DIR・KIKIWAKE_ENGINES_DIR）。
+//! 置き場所は環境変数で差し替えられる（KIKIWAKE_MODELS_DIR・KIKIWAKE_CACHE_DIR・KIKIWAKE_ENGINES_DIR・KIKIWAKE_APP_DATA_DIR）。
 //! 実録音で動かしても、出すのは段階・時刻・件数だけ（speakers などの中身を出すのは合成会議のときだけにする）。
 use std::path::Path;
 use std::process::ExitCode;
@@ -71,6 +72,14 @@ fn main() -> ExitCode {
     let a = |i: usize| args.get(i).cloned().unwrap_or_default();
     match a(0).as_str() {
         "env" => out(Ok(env::check_environment(&engine))),
+        "tidy" => {
+            let (m, t) = engine.tidy_on_start();
+            println!(
+                "{}",
+                json!({"moved": m.moved, "replaced": m.replaced, "failed": m.failed, "movedBytes": m.bytes, "tidiedAudio": t.audio, "tidiedBytes": t.bytes})
+            );
+            if m.failed > 0 { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+        }
         "models" => out(Ok(models::get_models(&engine))),
         "download" => {
             let ids: Vec<String> = if args.len() > 1 { args[1..].to_vec() } else { models::MODELS.iter().map(|m| m.id.to_string()).collect() };

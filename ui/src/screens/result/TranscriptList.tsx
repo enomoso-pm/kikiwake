@@ -4,6 +4,7 @@ import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/rea
 import { formatTimestamp } from "@contract/format";
 import { api } from "../../api";
 import { PlayProgress } from "../../components/PlayButton";
+import { useT } from "../../i18n";
 import { NO_NAME_COLOR } from "../../lib/colors";
 import { isCommitKey, isEscape } from "../../lib/keys";
 import { togglePlayback, usePlayer } from "../../lib/player";
@@ -32,9 +33,12 @@ interface RowProps {
   mod: string;
   durationSec: number;
   jobId: string | null;
+  /** 版8: 履歴から元ファイルの無い録音を開いたら false（行の再生はできない） */
+  playable: boolean;
 }
 
-const RowView = memo(function RowView({ row, color, query, current, flash, editing, editValue, menuOpen, mod, durationSec, jobId }: RowProps) {
+const RowView = memo(function RowView({ row, color, query, current, flash, editing, editValue, menuOpen, mod, durationSec, jobId, playable }: RowProps) {
+  const t = useT();
   const playKey = rowKey(row.id);
   const playing = usePlayer((p) => p.key === playKey);
   const background = flash ? "var(--flash)" : current ? "var(--hit-row)" : row.pending ? "var(--unres-bg)" : "transparent";
@@ -43,9 +47,9 @@ const RowView = memo(function RowView({ row, color, query, current, flash, editi
     : row.pending
       ? "1px dashed var(--unres-dash)"
       : "1px solid transparent";
-  const nameTip = row.overridden ? `この行だけ変更（元：${row.labelName}） ダブルクリックで変える` : "ダブルクリックで名前を変える";
+  const nameTip = row.overridden ? t.transcript.nameTipOverridden(t.engine.speakerLabel(row.labelName ?? "")) : t.transcript.nameTip;
   const onPlay = () => {
-    if (!jobId) return;
+    if (!jobId || !playable) return;
     togglePlayback(playKey, () => api.recordingSrc(jobId, row.start, row.end));
   };
   const onNameDouble = (e: MouseEvent<HTMLSpanElement>) => {
@@ -67,7 +71,8 @@ const RowView = memo(function RowView({ row, color, query, current, flash, editi
     >
       <button
         type="button"
-        title={playing ? "停止" : "この発言を再生"}
+        title={!playable ? t.history.playDisabled : playing ? t.transcript.stopLine : t.transcript.playLine}
+        disabled={!playable}
         onClick={onPlay}
         style={{
           marginTop: 2,
@@ -77,9 +82,9 @@ const RowView = memo(function RowView({ row, color, query, current, flash, editi
           borderRadius: 5,
           border: `1px solid ${playing ? "var(--accent)" : "var(--line-input)"}`,
           background: playing ? "var(--accent)" : "#fff",
-          color: playing ? "#fff" : "var(--ink-2)",
+          color: playing ? "#fff" : !playable ? "var(--disabled)" : "var(--ink-2)",
           fontSize: 9,
-          cursor: "pointer",
+          cursor: playable ? "pointer" : "default",
         }}
       >
         {playing ? "■" : "▶"}
@@ -105,7 +110,7 @@ const RowView = memo(function RowView({ row, color, query, current, flash, editi
             overflowWrap: "anywhere",
           }}
         >
-          {(row.name ?? "名無し") + (row.overlap ? "*" : "")}
+          {(row.name === null ? t.common.noName : t.engine.speakerLabel(row.name)) + (row.overlap ? "*" : "")}
         </span>
       </div>
       <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -146,11 +151,11 @@ const RowView = memo(function RowView({ row, color, query, current, flash, editi
                 background: "#fff",
               }}
             />
-            <span style={{ fontSize: 11, color: "var(--ink-4)" }}>{mod} + Enter で決定 ・ Esc でやめる</span>
+            <span style={{ fontSize: 11, color: "var(--ink-4)" }}>{t.transcript.editKeys(mod)}</span>
           </>
         ) : (
           <span
-            title="ダブルクリックで文字を直す"
+            title={t.transcript.editTip}
             onDoubleClick={() => startEditText(row.id)}
             style={{ fontSize: 15, lineHeight: "26px", cursor: "text", overflowWrap: "anywhere" }}
           >
@@ -171,16 +176,16 @@ const RowView = memo(function RowView({ row, color, query, current, flash, editi
         {row.history.length ? (
           <>
             <span
-              title={`元の文字：${row.original}`}
+              title={t.transcript.originalTip(row.original)}
               className="nowrap"
               style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: "var(--accent-soft)", color: "var(--accent-soft-ink)" }}
             >
-              直した
+              {t.transcript.edited}
             </span>
             <button
               type="button"
               className="nowrap"
-              title={row.history.length > 1 ? `1つ前：${row.history[row.history.length - 2]}` : `元の文字に戻る：${row.original}`}
+              title={row.history.length > 1 ? t.transcript.undoTipPrev(row.history[row.history.length - 2]) : t.transcript.undoTipOriginal(row.original)}
               onClick={() => undoText(row.id)}
               style={{
                 font: "inherit",
@@ -193,7 +198,7 @@ const RowView = memo(function RowView({ row, color, query, current, flash, editi
                 cursor: "pointer",
               }}
             >
-              ↶ 1つ戻す
+              {t.transcript.undo}
             </button>
           </>
         ) : null}
@@ -210,9 +215,10 @@ export interface TranscriptListProps {
   matchIndex: number;
   durationSec: number;
   jobId: string | null;
+  playable: boolean;
 }
 
-export function TranscriptList({ rows, colorOf, query, currentMatchId, matchIndex, durationSec, jobId }: TranscriptListProps) {
+export function TranscriptList({ rows, colorOf, query, currentMatchId, matchIndex, durationSec, jobId, playable }: TranscriptListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const editing = useApp((s) => s.editing);
   const menuId = useApp((s) => s.nameMenu?.id ?? null);
@@ -321,6 +327,7 @@ export function TranscriptList({ rows, colorOf, query, currentMatchId, matchInde
                 mod={mod}
                 durationSec={durationSec}
                 jobId={jobId}
+                playable={playable}
               />
             </div>
           );

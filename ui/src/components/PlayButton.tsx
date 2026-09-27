@@ -1,5 +1,6 @@
 // 再生ボタンと進み具合（名前付けのサンプル・確認用の手がかり）。同時に鳴るのは1つだけ（lib/player.ts）
 import type { CSSProperties } from "react";
+import { useT } from "../i18n";
 import { togglePlayback, usePlayer } from "../lib/player";
 import { Bar } from "./Bar";
 
@@ -9,6 +10,7 @@ export function usePlaying(key: string): boolean {
 
 /** 「▶ 再生」「■ 停止」（UI 画面仕様書 §7.3） */
 export function SamplePlayButton({ playKey, src }: { playKey: string; src: () => string | Promise<string> }) {
+  const t = useT();
   const playing = usePlaying(playKey);
   return (
     <button
@@ -26,7 +28,7 @@ export function SamplePlayButton({ playKey, src }: { playKey: string; src: () =>
         whiteSpace: "nowrap",
       }}
     >
-      {playing ? "■ 停止" : "▶ 再生"}
+      {playing ? t.common.stop : t.common.play}
     </button>
   );
 }

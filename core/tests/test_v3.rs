@@ -1,6 +1,7 @@
 //! 受け渡しの約束 版3（UI 側の依頼 R2〜R6）: 結果の画面の行と、手直しを当てた保存。
 //! Python の参照実装との一字一句の一致は、開発用の差分テスト（公開していない）で確かめた。
 
+use kikiwake_core::lang::Lang;
 use kikiwake_core::lines::{self, LineEdits, SaveFormat};
 use kikiwake_core::merge::{Meta, Names, Turn, UNKNOWN, Word};
 
@@ -51,16 +52,16 @@ fn save_applies_edits_then_merges_same_names() {
         confirmed: vec!["u2".into()],
         texts: names(&[("u1", "議題は\n三つです")]),
     };
-    let files = lines::save_files(&w, &t, Some(&n), &edits, &meta, &[SaveFormat::Txt, SaveFormat::Json]);
+    let files = lines::save_files(&w, &t, Some(&n), &edits, &meta, &[SaveFormat::Txt, SaveFormat::Json], Lang::Ja);
     assert_eq!(files.iter().map(|(f, _)| f.as_str()).collect::<Vec<_>>(), ["transcript_named.txt", "transcript_named.json"]);
     // 保存では、同じ名前（佐藤）の隣り合う行が1行に。確定した確認用は本文へ。直した文字は改行を空白にして入る
     assert_eq!(files[0].1, "[00:00] 佐藤: では始めます議題は 三つです\n[00:10] 田中: 田中ですよろしく\n[00:14] 佐藤: ありがとうございます\n");
     // 確定していなければ確認用のまま（.txt の末尾）
     let unconfirmed = LineEdits { names: names(&[("u2", "田中")]), ..LineEdits::default() };
-    let files = lines::save_files(&w, &t, Some(&n), &unconfirmed, &meta, &[SaveFormat::Txt]);
+    let files = lines::save_files(&w, &t, Some(&n), &unconfirmed, &meta, &[SaveFormat::Txt], Lang::Ja);
     assert!(files[0].1.ends_with("\n確認用（話者を決められなかった部分）\n[00:10] 田中ですよろしく\n"));
     // 名前が1つも無ければ Python 版と同じく transcript.*
-    let files = lines::save_files(&w, &t, None, &LineEdits::default(), &meta, &[SaveFormat::Md]);
+    let files = lines::save_files(&w, &t, None, &LineEdits::default(), &meta, &[SaveFormat::Md], Lang::Ja);
     assert_eq!(files[0].0, "transcript.md");
 }
 

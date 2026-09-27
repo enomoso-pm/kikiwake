@@ -4,7 +4,6 @@ import { api } from "../api";
 import { toAppError } from "../lib/errors";
 import { stopPlayback } from "../lib/player";
 import { enterNaming } from "./naming";
-import { hasUnsavedEdits } from "./result";
 import { getState, setState, type JobView } from "./state";
 import { goTo } from "./ui";
 
@@ -92,7 +91,9 @@ export function onJobDone(d: JobDone): void {
   forJob(d.jobId, () => {
     updateJob(d.jobId, () => ({ status: "done", stage: "merge", percent: 100, endedAt: Date.now(), outDir: d.outDir || getState().job?.outDir || "" }));
     closeJobDialogs();
-    void enterNaming(d.jobId, d.names);
+    // 処理した録音は元ファイルがあるので行を再生できる。版8: 閉じたときの状態があれば、閉じたときの画面へ
+    setState({ playable: true, relinkError: null });
+    void enterNaming(d.jobId, d.names, d.draft);
   });
 }
 
@@ -143,13 +144,11 @@ export function backToFile(): void {
 }
 
 /**
- * 窓を閉じようとした（約束 版5・版6）。処理中なら処理中の確認、保存していない手直しがあればその確認（2026-09-26 決定）、
- * どちらでもなければそのまま閉じる。エンジンは処理中か、setUnsavedChanges(true) の間だけ知らせる（store/bootstrap.ts）
+ * 窓を閉じようとした（約束 版5）。処理中なら処理中の確認、そうでなければそのまま閉じる。
+ * 版8: 保存していない手直しは作業フォルダに残るので確かめない（2026-09-27 決定）。エンジンも処理中の間だけ知らせる
  */
 export function onCloseRequested(): void {
-  const s = getState();
-  if (s.job?.status === "running") setState({ dialog: "close" });
-  else if (hasUnsavedEdits(s)) setState({ dialog: "closeUnsaved" });
+  if (getState().job?.status === "running") setState({ dialog: "close" });
   else void confirmClose();
 }
 

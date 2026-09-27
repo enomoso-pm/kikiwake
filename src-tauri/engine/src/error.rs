@@ -81,6 +81,11 @@ impl AppError {
         }
     }
 
+    /// 版8: 履歴の「ファイルを選び直す」で、選んだファイルが元の録音と違う（大きさか長さが違う）
+    pub fn not_same_recording() -> Self {
+        Self::new("not_same_recording", "選んだファイルは、この録音と大きさか長さが違います。元の録音を選んでください。")
+    }
+
     pub fn is_cancelled(&self) -> bool {
         self.code == "cancelled"
     }
@@ -115,6 +120,7 @@ mod tests {
             AppError::engine_failed(),
             AppError::out_of_memory(),
             AppError::cancelled(true),
+            AppError::not_same_recording(),
         ];
         for e in ours {
             assert_eq!(fixture[&e.code]["message"], e.message, "{}", e.code);

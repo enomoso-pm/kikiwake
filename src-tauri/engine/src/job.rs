@@ -1,5 +1,5 @@
 //! 処理の流れ: 音声の取り出し → 話者判定 → 書き起こし → 突き合わせ。
-//! 作業用のファイルはアプリのキャッシュ（jobs/<録音ごとの ID>/）に置く。保存先には利用者が保存したファイルだけを書く。
+//! 作業用のファイルは作業フォルダ（~/Library/Application Support/Kikiwake/jobs/<録音ごとの ID>/。そのまま履歴になる）に置く。保存先には利用者が保存したファイルだけを書く。
 //! 中止したら動いているエンジンを止める。話者判定まで済んでいれば残し、やり直すと使い回す。
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use kikiwake_core::lang::Lang;
 use kikiwake_core::merge::{self, Meta, Turn, Word};
 use kikiwake_core::repeat::{self, Repeat};
 use kikiwake_core::{diar, lines, pycompat, pyjson, unresolved, view, wav, whisper};
@@ -103,10 +104,14 @@ pub fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// 保存先の既定: 元ファイルの隣の「<名前>_文字起こし/」
-pub fn default_out_dir(source: &Path) -> PathBuf {
+/// 保存先の既定: 元ファイルの隣の「<名前>_文字起こし/」。英語の画面では「<名前>_transcript/」（約束 版7）
+pub fn default_out_dir(source: &Path, lang: Lang) -> PathBuf {
     let stem = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    source.parent().unwrap_or(Path::new("/")).join(format!("{stem}_文字起こし"))
+    let suffix = match lang {
+        Lang::Ja => "文字起こし",
+        Lang::En => "transcript",
+    };
+    source.parent().unwrap_or(Path::new("/")).join(format!("{stem}_{suffix}"))
 }
 
 /// ファイルシステムの空き（バイト）
@@ -137,6 +142,14 @@ pub struct Speed {
     /// 書き起こしにかかった時間 ÷ 録音の長さ
     pub transcribe_ratio: f64,
     pub measured_at: String,
+}
+
+/// 画面の言語を覚えておくファイル（アプリのデータの中。中身は「ja」か「en」）
+const LOCALE_FILE: &str = "locale.txt";
+
+/// 前に画面が知らせた言語（約束 版7）。無い・読めないときは None
+pub fn remembered_locale(paths: &Paths) -> Option<Lang> {
+    fs::read_to_string(paths.app_data.join(LOCALE_FILE)).ok().and_then(|s| Lang::parse(&s))
 }
 
 pub fn load_speed(paths: &Paths) -> Option<Speed> {
@@ -192,6 +205,8 @@ pub struct Engine {
     pub events: Arc<dyn Events>,
     job: Mutex<Option<Running>>,
     pub(crate) download: Mutex<Option<Arc<Cancel>>>,
+    /// 画面の言語（約束 版7）。保存するファイルの中の言葉と、既定の保存先の名前に使う
+    locale: Mutex<Lang>,
 }
 
 /// 突き合わせの段階の目安（秒）: 録音 1 時間あたり数秒
@@ -233,7 +248,8 @@ impl Ctx<'_> {
 
 impl Engine {
     pub fn new(paths: Paths, events: Arc<dyn Events>) -> Arc<Self> {
-        Arc::new(Self { paths, events, job: Mutex::new(None), download: Mutex::new(None) })
+        let locale = remembered_locale(&paths).unwrap_or_default();
+        Arc::new(Self { paths, events, job: Mutex::new(None), download: Mutex::new(None), locale: Mutex::new(locale) })
     }
 
     /// 処理を始める（別のスレッドで進め、途中経過・終わり・失敗はイベントで知らせる）。同時に動かすのは1本だけ
@@ -246,7 +262,7 @@ impl Engine {
             }
         }
         // 別の録音を始めたら、それまでの録音の取り出した音声と行の再生の切り抜きを消す（使い終えた。tidy.rs）
-        let t = tidy::tidy_jobs(&self.paths, Some(&id), None, SystemTime::now());
+        let t = tidy::tidy_jobs(&self.paths, Some(&id));
         if !t.is_empty() {
             log::write(&self.paths, &tidy::describe(&t));
         }
@@ -257,7 +273,7 @@ impl Engine {
             src.duration_sec = old.duration_sec;
         }
         write_json(&job.file("source.json"), &src)?;
-        let out_dir = default_out_dir(Path::new(&src.path)).display().to_string();
+        let out_dir = default_out_dir(Path::new(&src.path), self.locale()).display().to_string();
         let cancel = Arc::new(Cancel::new());
         let me = Arc::clone(self);
         let (c2, j2, source) = (Arc::clone(&cancel), job.clone(), PathBuf::from(&src.path));
@@ -300,24 +316,50 @@ impl Engine {
                 None => break None,
             }
         };
-        let t = tidy::tidy_jobs(&self.paths, busy.as_deref(), None, SystemTime::now());
+        let t = tidy::tidy_jobs(&self.paths, busy.as_deref());
         if !t.is_empty() {
             log::write(&self.paths, &tidy::describe(&t));
         }
     }
 
-    /// アプリを開いたとき: 前に消し損ねた音声と切り抜きを消し、30 日選び直していない録音を丸ごと消す（tidy.rs）。
-    /// 画面が処理を始める前に呼ぶ（取り出し途中のファイルを消さないように）
-    pub fn tidy_on_start(&self) {
-        let t = tidy::tidy_jobs(&self.paths, None, Some(tidy::keep_duration()), SystemTime::now());
+    /// アプリを開いたとき: 前の置き場所（Caches）の作業フォルダを移し（1回だけ。history.rs）、前に消し損ねた音声と切り抜きを消す（tidy.rs）。
+    /// 作業フォルダ（履歴）は丸ごとは消さない。画面が処理を始める前に呼ぶ（取り出し途中のファイルを消さないように）
+    pub fn tidy_on_start(&self) -> (crate::history::Migrated, tidy::Tidied) {
+        let m = crate::history::migrate_legacy_jobs(&self.paths);
+        if !m.is_empty() {
+            log::write(&self.paths, &m.describe());
+        }
+        let t = tidy::tidy_jobs(&self.paths, None);
         if !t.is_empty() {
             log::write(&self.paths, &tidy::describe(&t));
         }
+        (m, t)
+    }
+
+    /// 画面の言語（約束 版7）。画面が知らせる前は、前に知らせた言語（無ければ日本語。外枠が Mac の言語で決め直す）
+    pub fn locale(&self) -> Lang {
+        *self.locale.lock().unwrap()
+    }
+
+    /// 画面の言語にする（約束 版7 の setLocale）。remember なら次に開いたときのために覚える
+    /// （外枠がメニューを最初からその言語で作れるように）。変わったら true
+    pub fn set_locale(&self, lang: Lang, remember: bool) -> bool {
+        let changed = std::mem::replace(&mut *self.locale.lock().unwrap(), lang) != lang;
+        if remember && remembered_locale(&self.paths) != Some(lang) {
+            let _ = fs::create_dir_all(&self.paths.app_data);
+            let _ = fs::write(self.paths.app_data.join(LOCALE_FILE), lang.as_str());
+        }
+        changed
     }
 
     /// 処理中か（処理中に窓を閉じようとしたら確かめる。約束 版5）
     pub fn is_busy(&self) -> bool {
-        self.job.lock().unwrap().as_ref().is_some_and(|r| r.thread.as_ref().is_some_and(|t| !t.is_finished()))
+        self.running_id().is_some()
+    }
+
+    /// 処理中の録音の ID（履歴の一覧に出さない・消させない）
+    pub fn running_id(&self) -> Option<String> {
+        self.job.lock().unwrap().as_ref().and_then(|r| r.thread.as_ref().is_some_and(|t| !t.is_finished()).then(|| r.id.clone()))
     }
 
     /// 処理が終わるまで待つ（画面なしのコマンド用）
@@ -408,10 +450,10 @@ impl Engine {
         // 区切りの知らせが書き始めの 1〜2 分だけ・重複して出る）。繰り返しは書き起こしが終わってから JSON で見つける（知らせて続ける）。
         // 90 分を超える録音は、無音の所で約 1 時間ずつに分けて書き、中止しても書き終えた部分から再開する（chunk_plan）
         // 段階の始まりの知らせは transcribe_plan の最初の知らせ（再開なら書き終えた分の％。％は戻らない）
-        tryj!(prepare_asr(paths, &ctx.job));
-        let t_tr = Instant::now();
         let (over, size) = chunk_limits();
         let plan = chunk_plan(duration, &turns, over, size);
+        tryj!(prepare_asr(paths, &ctx.job, &plan));
+        let t_tr = Instant::now();
         // 最後に届いた全体の％・その時刻・次の刻みまでの幅（全体の％）。base はこの回に始めたときの％（再開なら書き終えた分）
         let step = Mutex::new((0.0_f64, Instant::now(), 4.9_f64));
         let base = Mutex::new(0.0_f64);
@@ -482,10 +524,13 @@ impl Engine {
         ctx.log(&format!("突き合わせ 話者 {}・確認用 {}・繰り返し {}", out.0, out.1, repeats.len()));
         let done = JobDone {
             job_id: ctx.job.id.clone(),
-            out_dir: default_out_dir(&ctx.source).display().to_string(),
+            // 既定の保存先の名前は、処理が終わったときの画面の言語で（約束 版7）
+            out_dir: default_out_dir(&ctx.source, ctx.engine.locale()).display().to_string(),
             speakers: out.0,
             unresolved_count: out.1,
             names: crate::results::names_of(&ctx.job),
+            // 版8: 閉じたときの状態（書き起こしが変わっていなければ）
+            draft: crate::history::load_draft(&ctx.job),
         };
         Ok((ctx, done))
     }
@@ -659,10 +704,23 @@ pub fn asr_settings(paths: &Paths) -> String {
     format!("whisper-cli {cli} / {} {model} / {}", engines::ASR_MODEL_FILE, engines::ASR_ARGS.join(" "))
 }
 
-/// 書き起こしを始める前に: 設定の目印が前と違えば、前の書き起こし（asr.json・分けたもの）を消して、今の目印を書く
-fn prepare_asr(paths: &Paths, job: &JobDir) -> Result<(), AppError> {
+/// 書き起こしを書き終えているか（今の分け方で、全部の部分がそろっている）
+fn asr_complete(job: &JobDir, plan: &[(f64, f64)]) -> bool {
+    if plan.len() == 1 {
+        return job.file("asr.json").is_file();
+    }
+    merge::load_json::<Vec<(f64, f64)>>(&job.file("asr_plan.json")).ok().as_deref() == Some(plan)
+        && (0..plan.len()).all(|i| job.file(&format!("asr_{i:02}.json")).is_file())
+}
+
+/// 書き起こしを始める前に: 設定の目印が前と違い、まだ書き終えていなければ、書きかけ（asr.json・分けたもの）を消して、今の目印を書く。
+/// 書き終えた書き起こしは、設定の目印が違っても（アプリを更新してエンジンを作り直しても）そのまま使う（2026-09-27。
+/// 作業フォルダは履歴なので、更新のたびに開き直すと書き起こしをやり直す（68 分で約 15 分・手直しも合わなくなる）のを避ける）。
+/// 目印のファイルは、書き起こしたときのエンジンの記録として残す
+fn prepare_asr(paths: &Paths, job: &JobDir, plan: &[(f64, f64)]) -> Result<(), AppError> {
     let now = asr_settings(paths);
-    if fs::read_to_string(job.file("asr_settings.txt")).ok().as_deref() != Some(now.as_str()) {
+    let same = fs::read_to_string(job.file("asr_settings.txt")).ok().as_deref() == Some(now.as_str());
+    if !same && !asr_complete(job, plan) {
         let _ = fs::remove_file(job.file("asr.json"));
         let _ = fs::remove_file(job.file("asr_plan.json"));
         for i in 0..100 {
@@ -673,13 +731,10 @@ fn prepare_asr(paths: &Paths, job: &JobDir) -> Result<(), AppError> {
     Ok(())
 }
 
-/// 前回の書き起こしまでそろっていて、始めると書き起こしをやり直さずに済むか（ファイルの確認で画面に知らせる。FileInfo.previous.resultReusable）
-pub fn transcript_reusable(paths: &Paths, job: &JobDir) -> bool {
+/// 前回の書き起こしを書き終えていて、始めると書き起こしをやり直さずに済むか（ファイルの確認で画面に知らせる。FileInfo.previous.resultReusable）。
+/// 書き終えていれば、設定の目印が違っても（アプリを更新しても）使う（prepare_asr と同じ。2026-09-27）
+pub fn transcript_reusable(_paths: &Paths, job: &JobDir) -> bool {
     // 取り出した音声は、使い終えたら消している（tidy.rs）。始めると元の録音から取り出し直す（68 分の録音で 1.2 秒）ので、ここでは見ない
-    let same = fs::read_to_string(job.file("asr_settings.txt")).map(|s| s == asr_settings(paths)).unwrap_or(false);
-    if !same {
-        return false;
-    }
     let (Ok(src), Ok(turns)) = (job.source(), merge::load_json::<Vec<Turn>>(&job.diarization())) else {
         return false;
     };
@@ -687,12 +742,7 @@ pub fn transcript_reusable(paths: &Paths, job: &JobDir) -> bool {
         return false;
     }
     let (over, size) = chunk_limits();
-    let plan = chunk_plan(src.duration_sec, &turns, over, size);
-    if plan.len() == 1 {
-        return job.file("asr.json").is_file();
-    }
-    merge::load_json::<Vec<(f64, f64)>>(&job.file("asr_plan.json")).ok().as_deref() == Some(&plan[..])
-        && (0..plan.len()).all(|i| job.file(&format!("asr_{i:02}.json")).is_file())
+    asr_complete(job, &chunk_plan(src.duration_sec, &turns, over, size))
 }
 
 fn set_status(job: &JobDir, status: &str) {
@@ -827,14 +877,55 @@ mod tests {
         assert_eq!(n[0].message, "0:16:43〜1:06:03 の書き起こしは、同じ文の繰り返しになっていて読めません");
     }
 
+    struct NoEvents;
+    impl Events for NoEvents {
+        fn job_progress(&self, _: &JobProgress) {}
+        fn job_done(&self, _: &JobDone) {}
+        fn job_failed(&self, _: &JobFailed) {}
+        fn model_progress(&self, _: &crate::types::ModelInfo) {}
+    }
+
     #[test]
-    fn reuse_transcript_only_with_same_settings_and_all_parts() {
+    fn locale_names_the_default_folder_and_is_remembered() {
+        // 既定の保存先の名前は画面の言語で（約束 版7）
+        let src = Path::new("/Users/example/定例 9月.m4a");
+        assert_eq!(default_out_dir(src, Lang::Ja), Path::new("/Users/example/定例 9月_文字起こし"));
+        assert_eq!(default_out_dir(src, Lang::En), Path::new("/Users/example/定例 9月_transcript"));
+
+        let root = std::env::temp_dir().join(format!("kikiwake-locale-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let paths = Paths {
+            models: root.join("models"),
+            app_data: root.join("app"),
+            work: root.join("work"),
+            legacy_work: None,
+            logs: root.join("logs"),
+            engines: root.join("engines"),
+        };
+        // 覚えた言語が無ければ日本語（外枠が Mac の言語で決め直す）。覚えずに変えたら、次に開いたときは元のまま
+        let engine = Engine::new(paths.clone(), Arc::new(NoEvents));
+        assert_eq!(engine.locale(), Lang::Ja);
+        assert!(engine.set_locale(Lang::En, false));
+        assert_eq!(remembered_locale(&paths), None);
+        // 画面が知らせた言語は覚え、次に開いたときもその言語から
+        assert!(!engine.set_locale(Lang::En, true));
+        assert_eq!(remembered_locale(&paths), Some(Lang::En));
+        assert_eq!(Engine::new(paths.clone(), Arc::new(NoEvents)).locale(), Lang::En);
+        // 読めない中身は覚えていない扱い
+        fs::write(paths.app_data.join(LOCALE_FILE), "zh").unwrap();
+        assert_eq!(remembered_locale(&paths), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reuse_finished_transcripts_even_after_an_update() {
         let root = std::env::temp_dir().join(format!("kikiwake-reuse-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let paths = Paths {
             models: root.join("models"),
             app_data: root.join("app"),
-            cache: root.join("cache"),
+            work: root.join("work"),
+            legacy_work: None,
             logs: root.join("logs"),
             engines: root.join("engines"),
         };
@@ -852,18 +943,27 @@ mod tests {
         fs::write(job.audio(), b"RIFF").unwrap();
         write_json(&job.file("source.json"), &source(4068.0)).unwrap();
         write_json(&job.diarization(), &vec![turn(0.0, 4000.0)]).unwrap();
+        let single = [(0.0, 4068.0)];
         assert!(!transcript_reusable(&paths, &job)); // 書き起こしがまだ無い
-        prepare_asr(&paths, &job).unwrap();
+        prepare_asr(&paths, &job, &single).unwrap();
         fs::write(job.file("asr.json"), b"{}").unwrap();
         assert!(transcript_reusable(&paths, &job));
         // 使い終えて取り出した音声を消しても使い回せる（始めると取り出し直す）
         fs::remove_file(job.audio()).unwrap();
         assert!(transcript_reusable(&paths, &job));
-        // 設定の目印が変わった（アプリの更新でエンジン・引数・モデルが変わった）→ 使わない。始めるときに前の書き起こしを消す
+        // 設定の目印が変わった（アプリの更新でエンジンを作り直した）: 書き終えた書き起こしはそのまま使う（履歴を開き直すたびに書き直さない）。
+        // 目印は書き起こしたときのエンジンの記録として残す
         fs::write(job.file("asr_settings.txt"), "whisper-cli 0000 / 前の設定").unwrap();
-        assert!(!transcript_reusable(&paths, &job));
-        prepare_asr(&paths, &job).unwrap();
-        assert!(!job.file("asr.json").exists());
+        assert!(transcript_reusable(&paths, &job));
+        prepare_asr(&paths, &job, &single).unwrap();
+        assert!(job.file("asr.json").exists());
+        assert_eq!(fs::read_to_string(job.file("asr_settings.txt")).unwrap(), "whisper-cli 0000 / 前の設定");
+        // 書き終えていなければ、書きかけは消して今のエンジンで書き直す
+        fs::remove_file(job.file("asr.json")).unwrap();
+        fs::write(job.file("asr_00.json"), b"{}").unwrap();
+        prepare_asr(&paths, &job, &single).unwrap();
+        assert!(!job.file("asr_00.json").exists());
+        assert_eq!(fs::read_to_string(job.file("asr_settings.txt")).unwrap(), asr_settings(&paths));
 
         // 4.5 時間の録音（分ける）は、分け方が同じで、分けた部分が全部そろったときだけ
         let turns = vec![turn(0.0, 3200.0), turn(3254.0, 9000.0), turn(9000.5, 16275.0)];

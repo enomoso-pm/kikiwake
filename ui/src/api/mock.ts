@@ -4,9 +4,13 @@ import type { KikiwakeApi, Unsubscribe } from "@contract/api";
 import type {
   EnvironmentCheck,
   FileInfo,
+  HistoryItem,
+  HistoryOpened,
   JobDone,
+  JobDraft,
   JobFailed,
   JobProgress,
+  Locale,
   ModelInfo,
   Names,
   SaveResult,
@@ -113,8 +117,12 @@ function joinPath(dir: string, name: string): string {
   return /[\\/]$/.test(dir) ? dir + name : dir + sep() + name;
 }
 
+/** 版7: 画面が知らせた言語（エンジンと同じく、既定の保存先の名前を合わせる） */
+let locale: Locale = "ja";
+const outDirName = (path: string) => `${stemOf(baseName(path))}_${locale === "en" ? "transcript" : "文字起こし"}`;
+
 function outDirFor(path: string): string {
-  return joinPath(dirOf(path), `${stemOf(baseName(path))}_文字起こし`);
+  return joinPath(dirOf(path), outDirName(path));
 }
 
 // ---- 画面1 初回セットアップ --------------------------------------------------------------
@@ -200,6 +208,10 @@ function scenarioFilePath(): string {
 
 /** 話者の判定まで済んだ録音（やり直すと使い回す） */
 const diarizationDone = new Set<string>();
+/** 版8: 履歴（作例から始め、見本で処理した録音を上に足す）・閉じたときの状態（録音ごと）・ジョブの録音 */
+let history: HistoryItem[] = fixtures.history();
+const drafts = new Map<string, JobDraft>();
+const jobPaths = new Map<string, string>();
 
 /** 版6: 書き起こしまで済んだ録音（選び直すと、書き起こしをやり直さずに1秒ほどで名前付けへ）と、そのとき確定した名前 */
 const transcriptDone = new Set<string>();
@@ -246,21 +258,44 @@ function stopTimers(j: MockJob | null) {
 function fail(j: MockJob, error: AppError) {
   j.running = false;
   stopTimers(j);
+  remember(j, "unfinished");
   ev.failed.emit({ jobId: j.id, error, diarizationKept: j.diarizationKept });
+}
+
+/** 版8: 処理した録音を履歴の一番上に（同じ録音は置き換える） */
+function remember(j: MockJob, status: HistoryItem["status"]) {
+  const names = namesByPath.get(pathKey(j.path));
+  const item: HistoryItem = {
+    jobId: j.id,
+    name: baseName(j.path),
+    path: j.path,
+    durationSec: supportedBase().durationSec,
+    processedAt: new Date().toISOString().slice(0, 10),
+    status,
+    ...(status === "done" || j.diarizationKept ? { speakers: speakersFor().length } : {}),
+    named: Boolean(names && Object.values(names).some((v) => v.trim())),
+    unsavedEdits: Boolean(drafts.get(pathKey(j.path))?.unsaved),
+    sourceAvailable: true,
+    diarizationKept: j.diarizationKept,
+  };
+  history = [item, ...history.filter((h) => pathKey(h.path) !== pathKey(j.path))];
 }
 
 function jobDone(j: MockJob) {
   j.running = false;
   stopTimers(j);
   transcriptDone.add(pathKey(j.path));
+  remember(j, "done");
   const t = baseTranscript();
   const names = namesByPath.get(pathKey(j.path));
+  const draft = drafts.get(pathKey(j.path));
   ev.done.emit({
     jobId: j.id,
     outDir: outDirFor(j.path),
     speakers: speakersFor().length,
     unresolvedCount: t.unresolved.length,
     ...(names && Object.keys(names).length ? { names: { ...names } } : {}),
+    ...(draft ? { draft: structuredClone(draft) } : {}),
   });
 }
 
@@ -341,8 +376,27 @@ function applyNamesTo(t: TranscriptView, names: Names): TranscriptView {
 
 const appliedNames = new Map<string, Names>();
 const savedFiles = new Set<string>();
-/** 版6: 画面が知らせた「保存していない手直しがある」 */
-let unsavedChanges = false;
+
+/** 版8: 履歴から開いた録音（作例は合成会議の結果を出す） */
+function opened(item: HistoryItem, sourceAvailable: boolean): HistoryOpened {
+  const key = pathKey(item.path);
+  jobPaths.set(item.jobId, item.path);
+  transcriptDone.add(key);
+  diarizationDone.add(key);
+  if (item.named && !namesByPath.has(key)) namesByPath.set(key, fixtures.names());
+  const names = namesByPath.get(key);
+  if (names) appliedNames.set(item.jobId, { ...names });
+  const draft = drafts.get(key);
+  return {
+    jobId: item.jobId,
+    outDir: outDirFor(item.path),
+    speakers: speakersFor().length,
+    unresolvedCount: baseTranscript().unresolved.length,
+    ...(names && Object.keys(names).length ? { names: { ...names } } : {}),
+    ...(draft ? { draft: structuredClone(draft) } : {}),
+    sourceAvailable,
+  };
+}
 
 // ---- KikiwakeApi ------------------------------------------------------------------
 
@@ -431,6 +485,7 @@ export const mockApi: KikiwakeApi = {
     const reused = scenario.file === "previous" || diarizationDone.has(pathKey(path));
     const j: MockJob = { id: `job-mock-${++jobSeq}`, path, timers: [], running: true, diarizationKept: reused };
     job = j;
+    jobPaths.set(j.id, path);
     if (transcriptDone.has(pathKey(path))) {
       // 版6: 前回の書き起こしを使い回す（エンジンは1秒ほど。段階は一瞬で進む）
       const at = (sec: number, stage: JobProgress["stage"], stagePercent: number | null) =>
@@ -491,7 +546,7 @@ export const mockApi: KikiwakeApi = {
     // 見本: 既定の保存先とデスクトップの間で切り替える（製品では OS のフォルダ選択画面）
     const path = job?.path ?? scenarioFilePath();
     const original = outDirFor(path);
-    const desktop = joinPath(osPath("/Users/example/Desktop"), `${stemOf(baseName(path))}_文字起こし`);
+    const desktop = joinPath(osPath("/Users/example/Desktop"), outDirName(path));
     return defaultDir && pathKey(defaultDir) === pathKey(desktop) ? original : desktop;
   },
   async saveOutputs(jobId, req): Promise<SaveResult> {
@@ -520,10 +575,6 @@ export const mockApi: KikiwakeApi = {
   },
 
   onCloseRequested: (cb) => ev.close.on(() => cb()),
-  // 版6: 保存していない手直しがあるか（見本では覚えておき、閉じる操作をまねるときに使う）
-  async setUnsavedChanges(unsaved) {
-    unsavedChanges = unsaved;
-  },
   async closeApp() {
     await wait(50);
     if (job) {
@@ -531,6 +582,59 @@ export const mockApi: KikiwakeApi = {
       stopTimers(job);
     }
     ev.notice.emit({ kind: "closed", text: "（見本）ここでアプリが閉じます" });
+  },
+  // 版7: 画面の言語（見本では既定の保存先の名前だけ合わせる。Mac のメニューと保存するファイルの中はアプリの中だけ）
+  async setLocale(l) {
+    locale = l;
+  },
+
+  // ---- 版8: 履歴・閉じたときの状態 ----
+  async listHistory() {
+    await wait(120);
+    const running = job && job.running ? pathKey(job.path) : null;
+    return history
+      .filter((h) => pathKey(h.path) !== running)
+      .map((h) => ({ ...h, unsavedEdits: h.status === "done" && (drafts.get(pathKey(h.path))?.unsaved ?? h.unsavedEdits) }));
+  },
+  async openHistory(jobId) {
+    await wait(400);
+    const item = history.find((h) => h.jobId === jobId);
+    if (!item) throw fixtureError("file_not_found", `履歴に無い: ${jobId}（見本）`);
+    if (item.status !== "done") throw fixtureError("engine_failed", `まだ書き終えていない録音: ${jobId}（見本）`);
+    if (job) {
+      job.running = false;
+      stopTimers(job);
+    }
+    return opened(item, item.sourceAvailable);
+  },
+  async deleteHistory(jobId) {
+    await wait(150);
+    const item = history.find((h) => h.jobId === jobId);
+    if (!item) return;
+    const key = pathKey(item.path);
+    history = history.filter((h) => h.jobId !== jobId);
+    [drafts, namesByPath].forEach((m) => m.delete(key));
+    [transcriptDone, diarizationDone].forEach((m) => m.delete(key));
+  },
+  async relinkSource(jobId, path) {
+    await wait(300);
+    const item = history.find((h) => h.jobId === jobId);
+    if (!item) throw fixtureError("file_not_found", `履歴に無い: ${jobId}（見本）`);
+    // 見本: 名前が同じなら同じ録音とみなす（エンジンは大きさと長さで決める）
+    if (baseName(path) !== item.name) throw fixtureError("not_same_recording", `${item.name} ≠ ${baseName(path)}（見本）`);
+    const draft = drafts.get(pathKey(item.path));
+    item.path = path;
+    item.sourceAvailable = true;
+    if (draft) drafts.set(pathKey(path), draft);
+    return opened(item, true);
+  },
+  async saveDraft(jobId, draft) {
+    const path = jobPaths.get(jobId) ?? history.find((h) => h.jobId === jobId)?.path;
+    if (!path) return;
+    drafts.set(pathKey(path), structuredClone(draft));
+    // エンジンと同じく、手直しした録音を履歴の一番上に（最後に使った順）
+    const item = history.find((h) => pathKey(h.path) === pathKey(path));
+    if (item) history = [item, ...history.filter((h) => h !== item)];
   },
 };
 
@@ -561,12 +665,12 @@ export const mockDev = {
     jobDone(job);
   },
   /**
-   * 窓を閉じる操作をまねる（約束 版6）。処理中か、画面が setUnsavedChanges(true) を知らせているときだけ画面に知らせる。
-   * どちらでもなければ、エンジンと同じく確かめずに閉じる
+   * 窓を閉じる操作をまねる（約束 版5）。処理中のときだけ画面に知らせる。そうでなければ、エンジンと同じく確かめずに閉じる
+   * （版8: 保存していない手直しは作業フォルダに残るので確かめない）
    */
   simulateCloseRequest(): boolean {
-    if ((job && job.running) || unsavedChanges) ev.close.emit();
-    else ev.notice.emit({ kind: "closed", text: "（見本）ここでアプリが閉じます（処理中でも手直しありでもないので、確かめない）" });
+    if (job && job.running) ev.close.emit();
+    else ev.notice.emit({ kind: "closed", text: "（見本）ここでアプリが閉じます（処理中ではないので、確かめない。手直しは履歴に残る）" });
     return true;
   },
   /** 台本どおりの名前 */

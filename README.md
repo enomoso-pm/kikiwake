@@ -1,7 +1,7 @@
 # Kikiwake（聞き分け）
 
 > **English:** Kikiwake is a macOS app that turns meeting recordings into speaker-labeled transcripts, entirely on your Mac.
-> It is currently available in **Japanese only**. Multilingual versions are planned for the future.
+> The app is available in **Japanese and English**. Transcription currently supports **Japanese recordings only**.
 
 会議の録音・録画から、「誰が・何を話したか」が分かる文字起こしを作る Mac のアプリです。
 **音声も文字も、この Mac の中だけで処理します。**
@@ -14,6 +14,7 @@
 - 話者ごとに声を聞いて名前を付ける。自己紹介など、名前の手がかりも出す
 - 結果の画面で、行ごとの名前や文字を直してから保存する（.md・.txt・.json）
 - 4 時間ほどの長い録音でも、メモリを使いすぎずに最後まで処理する
+- 画面は日本語と英語（Mac の言語に合わせて始まり、窓の右上で切り替えられる。保存するファイルの見出しなども画面の言語で）。書き起こせるのは、今は日本語の録音だけ
 
 | ファイルを選ぶ | 結果 |
 |---|---|
@@ -49,15 +50,15 @@
 2. **ファイル**: 録音・録画を窓にドラッグします（または「ファイルを選ぶ」）
 3. **処理**: 待ちます。M4 の Mac で録音の長さの 0.2〜0.4 倍ほど（68 分の録音で約 15 分）。処理中はスリープしません
 4. **名前付け**: 話者ごとに「▶ 再生」で声を聞き、名前を入れます
-5. **結果**: 確かめて、必要なら直して、保存します。保存先は、元のファイルの隣の「〈元の名前〉_文字起こし」フォルダです
+5. **結果**: 確かめて、必要なら直して、保存します。保存先は、元のファイルの隣の「〈元の名前〉_文字起こし」フォルダです（英語の画面では「〈元の名前〉_transcript」）
 
-保存しないまま閉じても、同じ録音を選び直せば、書き起こしをやり直さずに数秒で戻れます（30 日以内）。
+**履歴**: ファイルの画面の「履歴」から、前に文字起こしした録音を開き直せます。閉じたときの画面（名前付け・結果）に、入れかけの名前や直した文字のまま戻ります（保存していなくても残ります）。処理の途中で閉じた録音は「続きから」処理でき、要らなくなった録音は履歴から消せます（元の録音と、保存した文字起こしのファイルは消えません）。
 
 ## 音声と文字の扱い
 
 - 処理はすべてこの Mac の中で行います。音声も文字も外に送りません。使い方の送信（テレメトリ）もありません
 - インターネットを使うのは、初回の AI モデルの取得だけです（取得先は huggingface.co）
-- 作業用のファイルは `~/Library/Caches/Kikiwake/` に置きます。使い終えた録音から取り出した音声は、別の録音を始めたときとアプリを終えるときに消し、30 日選び直していない録音の作業用のファイルは丸ごと消します。元の録音・録画と、保存したファイルには触りません
+- 作業用のファイル（履歴）は `~/Library/Application Support/Kikiwake/jobs/` に置きます（1 時間の録音で約 8MB）。使い終えた録音から取り出した音声は、別の録音を始めたときとアプリを終えるときに消します。書き起こし・名前・手直しは、履歴から消すまで残ります。元の録音・録画と、保存したファイルには触りません
 - ログ（`~/Library/Logs/Kikiwake/kikiwake.log`）には、処理の段階・時刻・エラーだけを書きます。文字起こしの中身と、録音の名前・場所は書きません
 - 会議などを録音するときは、話す人の了承を得てください
 
@@ -67,8 +68,8 @@
 
 | フォルダ | 中身 |
 |---|---|
-| `~/Library/Application Support/Kikiwake` | AI モデル（約 3.2GB） |
-| `~/Library/Caches/Kikiwake` | 作業用のファイル |
+| `~/Library/Application Support/Kikiwake` | AI モデル（約 3.2GB）と履歴（作業用のファイル） |
+| `~/Library/Caches/Kikiwake` | 画面の一時ファイル（前の版の作業用のファイルは、新しい版を開くと上へ移す） |
 | `~/Library/Logs/Kikiwake` | ログ |
 
 ## 困ったとき
@@ -110,8 +111,9 @@ AI モデルはアプリに含めず、初回にそれぞれの取得先から�
 Kikiwake (聞き分け, "telling voices apart") is a macOS app that creates speaker-labeled transcripts from meeting recordings.
 Everything runs locally on your Mac: no audio or text is sent anywhere, and there is no telemetry. The only network access is the one-time download of the AI models from Hugging Face.
 
-- **Language:** The app and the transcription currently support **Japanese only**. Multilingual versions are planned.
+- **Language:** The app is available in **Japanese and English**. It starts in your Mac's language, and you can switch at the top right of the window. Saved transcripts follow the app's language. Transcription currently supports **Japanese recordings only**.
 - **Requirements:** Apple silicon Mac, macOS 14 or later, 16 GB of memory recommended, about 4 GB of free disk space.
-- **Install:** Download the `.dmg` from [Releases](https://github.com/enomoso-pm/kikiwake/releases). The app is not notarized by Apple, so on first launch go to System Settings → Privacy & Security and click "Open Anyway" (macOS 15 or later).
+- **History:** Reopen past recordings from “History” on the file screen. You return to where you left off, including names you were typing and text you edited (even if you didn't save a file). Unfinished recordings can continue processing. Deleting from History removes only Kikiwake's working data, not your recording or saved transcripts.
+- **Install:** Download the `.dmg` from [Releases](https://github.com/enomoso-pm/kikiwake/releases) and drag Kikiwake to Applications. The app is not notarized by Apple, so on first launch go to System Settings → Privacy & Security and click "Open Anyway" (macOS 15 or later). Step-by-step instructions are in `Read Me First.txt` in the `.dmg`.
 - **Built with:** whisper.cpp (Whisper large-v3), NeMo-Speech.cpp (Nemotron 3 Diarization), Tauri, React, and Rust.
 - **License:** MIT. See [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) for third-party licenses.

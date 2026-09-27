@@ -94,10 +94,12 @@ export default function DevPanel() {
       <button
         type="button"
         title="開発用の切替"
+        data-dev-toggle=""
         onClick={() => setOpen(!open)}
         style={{
           position: "fixed",
-          right: 14,
+          // 右端は表示の言語の切り替え（製品にもある）。見本だけのこのボタンはその左に置く
+          right: 150,
           top: 12,
           zIndex: 40,
           whiteSpace: "nowrap",

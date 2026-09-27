@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use kikiwake_core::lang::Lang;
 use kikiwake_core::lines::{self, LineEdits, SaveFormat, SaveResult};
 use kikiwake_core::merge::{self, Meta, Names, Turn, Word};
 use kikiwake_core::unresolved::UnresolvedHint;
@@ -64,7 +65,9 @@ pub fn apply_names(engine: &Engine, job_id: &str, names: &Names) -> Result<Trans
     }
     let dir = job.file("named");
     let _ = fs::remove_dir_all(&dir);
-    let files = lines::save_files(&p.words, &p.turns, Some(&names), &LineEdits::default(), &p.meta, &[SaveFormat::Md, SaveFormat::Json]);
+    // 作業フォルダの中の実名版は、画面の言語に関係なく Python 版と同じ日本語で
+    let files =
+        lines::save_files(&p.words, &p.turns, Some(&names), &LineEdits::default(), &p.meta, &[SaveFormat::Md, SaveFormat::Json], Lang::Ja);
     lines::write_files(&dir, &files, true).map_err(|e| io_error(&e, "実名版"))?;
     Ok(with_repeats(&job, named_view(&p, &names)))
 }
@@ -79,14 +82,15 @@ pub fn get_transcript(engine: &Engine, job_id: &str, named: bool) -> Result<Tran
     Ok(with_repeats(&job, view))
 }
 
-/// 手直しを当てて保存する。同じ名前のファイルがあれば、overwrite でない限り書かずに existing を返す
+/// 手直しを当てて保存する。同じ名前のファイルがあれば、overwrite でない限り書かずに existing を返す。
+/// 中の言葉は画面の言語（約束 版7。英語なら見出し・確認用の欄・「Speaker A」を英語に）
 pub fn save_outputs(engine: &Engine, job_id: &str, req: &SaveRequest) -> Result<SaveResult, AppError> {
     let job = JobDir::open(&engine.paths, job_id)?;
     let p = parts(&job)?;
     let names = names_of(&job);
     let edits = req.edits.clone().unwrap_or_default();
     let formats: Vec<SaveFormat> = if req.formats.is_empty() { vec![SaveFormat::Md] } else { req.formats.clone() };
-    let files = lines::save_files(&p.words, &p.turns, names.as_ref(), &edits, &p.meta, &formats);
+    let files = lines::save_files(&p.words, &p.turns, names.as_ref(), &edits, &p.meta, &formats, engine.locale());
     lines::write_files(Path::new(&req.dir), &files, req.overwrite.unwrap_or(false)).map_err(|e| io_error(&e, &req.dir))
 }
 

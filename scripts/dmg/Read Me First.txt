@@ -1,0 +1,31 @@
+Getting started with Kikiwake
+
+Kikiwake processes audio and text only on this Mac. It uses the internet only to download the AI models the first time.
+
+The app is available in Japanese and English. It starts in your Mac's language, and you can switch at the top right of the window.
+Transcription currently supports Japanese recordings only.
+
+
+1. Drag "Kikiwake" onto the "アプリケーション" (Applications) shortcut.
+
+2. The first time you open Kikiwake, macOS asks you to confirm it.
+   Kikiwake isn't registered with Apple's paid developer program, so at first macOS says it can't be opened.
+
+   macOS 15 or later:
+     1) Open "Kikiwake" in Applications. When a warning says it can't be opened, click "Done"
+        (don't click "Move to Trash").
+     2) Choose Apple menu > System Settings > Privacy & Security.
+     3) Under "Security" near the bottom, you'll see a message saying that "Kikiwake" was blocked.
+        Click "Open Anyway" next to it and enter your password.
+     4) When asked again, click "Open Anyway". Kikiwake opens.
+
+   macOS 14:
+     In Finder, Control-click "Kikiwake", choose "Open", then click "Open" again.
+
+   After the first time, it opens normally.
+
+3. The first time, Kikiwake downloads the AI models (about 3.2 GB). Then just drag in a recording and name the speakers.
+
+
+Help and documentation: https://github.com/enomoso-pm/kikiwake
+License: MIT (in Kikiwake, choose Help > Licenses (Full Text))

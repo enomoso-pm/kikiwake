@@ -1,10 +1,12 @@
 import { Suspense, lazy } from "react";
 import { mockDev } from "./api";
 import { Dialogs } from "./components/Dialogs";
+import { LanguageSwitch } from "./components/LanguageSwitch";
 import { StepBar } from "./components/StepBar";
 import { Toast } from "./components/Toast";
 import { DoneScreen } from "./screens/DoneScreen";
 import { FileScreen } from "./screens/FileScreen";
+import { HistoryScreen } from "./screens/HistoryScreen";
 import { NamingScreen } from "./screens/NamingScreen";
 import { ProcessingScreen } from "./screens/ProcessingScreen";
 import { ResultScreen } from "./screens/ResultScreen";
@@ -20,6 +22,8 @@ function CurrentScreen({ screen }: { screen: Screen }) {
       return <SetupScreen />;
     case "file":
       return <FileScreen />;
+    case "history":
+      return <HistoryScreen />;
     case "processing":
       return <ProcessingScreen />;
     case "naming":
@@ -37,6 +41,7 @@ export function App() {
   return (
     <div className="app">
       <StepBar />
+      <LanguageSwitch />
       <main className="app-body">{booted ? <CurrentScreen screen={screen} /> : null}</main>
       <Dialogs />
       <Toast />

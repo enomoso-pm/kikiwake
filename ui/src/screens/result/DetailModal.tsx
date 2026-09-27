@@ -1,6 +1,7 @@
 // 詳細モーダル（UI 画面仕様書 §8.8）。話者ごとの発言時間を一番上に。録音の情報と処理の条件は出さない（D12）
 import { useEffect, useRef } from "react";
 import { Bar } from "../../components/Bar";
+import { useT } from "../../i18n";
 import { formatCount } from "../../lib/format";
 import { isEscape } from "../../lib/keys";
 import type { ResultStats, TalkRow } from "../../lib/transcript";
@@ -40,6 +41,7 @@ export function DetailModal({
   labelCount: number;
   colorOf: (name: string | null) => string;
 }) {
+  const t = useT();
   const open = useApp((s) => s.detailOpen);
   const boxRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -89,7 +91,7 @@ export function DetailModal({
         ref={boxRef}
         role="dialog"
         aria-modal="true"
-        aria-label="詳細"
+        aria-label={t.detail.title}
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 520,
@@ -107,59 +109,59 @@ export function DetailModal({
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 16, fontWeight: 600 }}>詳細</span>
-          <button ref={closeRef} type="button" className="icon-btn" title="閉じる" onClick={closeDetail}>
+          <span style={{ fontSize: 16, fontWeight: 600 }}>{t.detail.title}</span>
+          <button ref={closeRef} type="button" className="icon-btn" title={t.common.close} onClick={closeDetail}>
             ✕
           </button>
         </div>
 
         <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 600 }}>話者ごとの発言時間</h2>
+            <h2 style={{ fontSize: 14, fontWeight: 600 }}>{t.detail.talkTitle}</h2>
             <button type="button" className="btn-link nowrap" style={{ font: "inherit", fontSize: 12, cursor: "pointer" }} onClick={() => toNaming(null)}>
-              名前を直す
+              {t.detail.fixNames}
             </button>
           </div>
-          {talk.map((t) => (
+          {talk.map((row) => (
             <div
-              key={t.name}
+              key={row.name}
               className="talk-row"
               role="button"
               tabIndex={0}
-              title={`${t.name} の名前を直す`}
-              onClick={() => toNaming(t.name)}
+              title={t.detail.fixNameOf(t.engine.speakerLabel(row.name))}
+              onClick={() => toNaming(row.name)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  toNaming(t.name);
+                  toNaming(row.name);
                 }
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                <span>{t.name}</span>
+                <span>{t.engine.speakerLabel(row.name)}</span>
                 <span className="num" style={{ color: "var(--ink-3)" }}>
-                  {Math.round(t.share * 100)}%　{Math.round(t.sec / 60)}分
+                  {t.detail.share(Math.round(row.share * 100), Math.round(row.sec / 60))}
                 </span>
               </div>
-              <Bar ratio={t.share} height={6} color={colorOf(t.name)} roundFill={false} />
+              <Bar ratio={row.share} height={6} color={colorOf(row.name)} roundFill={false} />
             </div>
           ))}
         </section>
 
         <Section
-          title="本文"
+          title={t.detail.textTitle}
           rows={[
-            ["行数・字数", `${formatCount(stats.rows)}行 ・ ${formatCount(stats.chars)}字`],
-            ["話者", `${talk.length}人（ラベル ${labelCount}個から）`],
-            ["声の重なり（*）", `${formatCount(stats.overlaps)}箇所`],
+            [t.detail.rowsChars, t.detail.rowsCharsValue(formatCount(stats.rows), formatCount(stats.chars))],
+            [t.detail.speakers, t.detail.speakersValue(talk.length, labelCount)],
+            [t.detail.overlaps, t.detail.overlapsValue(formatCount(stats.overlaps))],
           ]}
         />
         <Section
-          title="手直し"
+          title={t.detail.editsTitle}
           rows={[
-            ["文字を直した行", `${formatCount(stats.editedRows)}行`],
-            ["名前を個別に変えた行", `${formatCount(stats.renamedRows)}行`],
-            ["確認用の残り", `${formatCount(stats.pending)}件（確定済み ${formatCount(stats.confirmed)}件）`],
+            [t.detail.editedRows, t.detail.rowsValue(formatCount(stats.editedRows))],
+            [t.detail.renamedRows, t.detail.rowsValue(formatCount(stats.renamedRows))],
+            [t.detail.pending, t.detail.pendingValue(formatCount(stats.pending), formatCount(stats.confirmed))],
           ]}
         />
       </div>

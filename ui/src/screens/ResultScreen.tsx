@@ -1,11 +1,13 @@
 // 画面5 結果（UI 画面仕様書 §8）
 import { useMemo } from "react";
 import { ErrorBand } from "../components/ErrorBand";
+import { useT } from "../i18n";
 import { FREE_NAME_COLOR, NO_NAME_COLOR, NO_NAME_DOT, labelColors } from "../lib/colors";
 import { basename, formatClock, formatCount } from "../lib/format";
 import { isPlainEnter } from "../lib/keys";
 import { nameKey } from "../lib/names";
 import { buildRows, peopleOf, resultStats, searchMatches, talkTimes } from "../lib/transcript";
+import { relinkSource } from "../store/history";
 import { finish } from "../store/leave";
 import { goToNamingFor } from "../store/naming";
 import {
@@ -26,6 +28,7 @@ import { TranscriptList } from "./result/TranscriptList";
 import { UnresolvedPanel } from "./result/UnresolvedPanel";
 
 export function ResultScreen() {
+  const t = useT();
   const view = useApp((s) => s.view);
   const lineNames = useApp((s) => s.lineNames);
   const confirmed = useApp((s) => s.confirmed);
@@ -38,6 +41,8 @@ export function ResultScreen() {
   const fileName = useApp((s) => s.file?.name);
   const jobId = useApp((s) => s.job?.jobId ?? null);
   const saveError = useApp((s) => s.saveError);
+  const playable = useApp((s) => s.playable);
+  const relinkError = useApp((s) => s.relinkError);
 
   const rows = useMemo(
     () => (view ? buildRows(view, lineNames, confirmed, textHistory) : []),
@@ -92,24 +97,23 @@ export function ResultScreen() {
             onClick={() => goToNamingFor(null)}
             style={{ alignSelf: "flex-start", font: "inherit", fontSize: 13, padding: "2px 0", cursor: "pointer" }}
           >
-            ← 名前付けに戻る
+            {t.result.backToNaming}
           </button>
-          <h1 style={{ fontSize: 20, fontWeight: 600 }}>文字起こし</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 600 }}>{t.result.title}</h1>
           <span className="nowrap num" style={{ fontSize: 13, color: "var(--ink-3)" }}>
-            {fileName ?? basename(view.source)} ・ {formatClock(durationSec)} ・ {talk.length}人 ・ {formatCount(stats.rows)}行 ・{" "}
-            {formatCount(stats.chars)}字
+            {t.result.meta(fileName ?? basename(view.source), formatClock(durationSec), talk.length, formatCount(stats.rows), formatCount(stats.chars))}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "none" }}>
           <span className="nowrap" style={{ fontSize: 12, color: "var(--ink-4)" }}>
-            名前や、ラベルのまとめ方は、いつでも戻って直せます
+            {t.result.editableNote}
           </span>
           <button type="button" className="btn btn-mid" onClick={openDetail}>
-            詳細
+            {t.result.details}
           </button>
           {/* 保存したかどうかに関係なく押せる（2026-09-26 決定。仕様書に無い）。完了の画面は工程の外 */}
           <button type="button" className="btn btn-mid" onClick={finish}>
-            完了
+            {t.result.finish}
           </button>
         </div>
       </div>
@@ -132,7 +136,7 @@ export function ResultScreen() {
             <input
               className="input"
               value={search}
-              placeholder="本文を検索"
+              placeholder={t.result.searchPlaceholder}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
                 if (isPlainEnter(e)) {
@@ -143,24 +147,24 @@ export function ResultScreen() {
               style={{ width: 220, flex: "none", fontSize: 14, padding: "7px 12px" }}
             />
             <span className="nowrap num" style={{ fontSize: 13, color: "var(--ink-3)", minWidth: 72 }}>
-              {search.trim() ? (matches.length ? `${current + 1} / ${matches.length}件` : "0件") : ""}
+              {search.trim() ? (matches.length ? t.result.matches(current + 1, matches.length) : t.result.noMatches) : ""}
             </span>
             <button type="button" className="btn btn-small" onClick={() => moveMatch(-1)}>
-              前へ
+              {t.result.prev}
             </button>
             <button type="button" className="btn btn-small" onClick={() => moveMatch(1)}>
-              次へ
+              {t.result.next}
             </button>
             <span className="nowrap" style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-4)" }}>
-              * は声の重なり ・ 名前も文字もダブルクリックで直せます
+              {t.result.hint}
             </span>
             {stats.editedRows ? (
               <>
                 <span className="nowrap" style={{ fontSize: 12, color: "var(--accent-soft-ink)" }}>
-                  直した行 {stats.editedRows}
+                  {t.result.editedRows(stats.editedRows)}
                 </span>
                 <button type="button" className="btn btn-small" onClick={requestRevertAll}>
-                  すべて元の文字に戻す
+                  {t.result.revertAll}
                 </button>
               </>
             ) : null}
@@ -179,7 +183,7 @@ export function ResultScreen() {
             }}
           >
             <span className="nowrap" style={{ fontSize: 12, color: "var(--ink-3)", marginRight: 4 }}>
-              表示する人
+              {t.result.showPeople}
             </span>
             {chips.map((c) => {
               const on = !hidden[peopleKey(c.name)];
@@ -193,7 +197,7 @@ export function ResultScreen() {
                 >
                   <span className="check-box">{on ? "✓" : ""}</span>
                   <span className="dot" style={{ width: 8, height: 8, background: c.name === null ? NO_NAME_DOT : colorOf(c.name) }} />
-                  {c.name ?? "名無し"}
+                  {c.name === null ? t.common.noName : t.engine.speakerLabel(c.name)}
                 </button>
               );
             })}
@@ -212,14 +216,30 @@ export function ResultScreen() {
                 cursor: "pointer",
               }}
             >
-              すべて表示
+              {t.result.showAll}
             </button>
             <span className="nowrap" style={{ fontSize: 12, color: "var(--ink-4)", marginLeft: "auto" }}>
               {shownPeople === chips.length
-                ? `${formatCount(visible.length)}行`
-                : `${chips.length}人中${shownPeople}人 ・ ${formatCount(visible.length)}行`}
+                ? t.result.rows(formatCount(visible.length))
+                : t.result.shownOf(chips.length, shownPeople, formatCount(visible.length))}
             </span>
           </div>
+
+          {/* 履歴から元ファイルの無い録音を開いた（約束 版8）。書き起こしは読めるが行の再生はできない。選び直すと再生できる */}
+          {!playable ? (
+            <div style={{ flex: "none", display: "flex", flexDirection: "column", gap: 6, padding: "10px 28px", borderBottom: "1px solid var(--line-soft)" }}>
+              <div
+                className="band-warn"
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "8px 12px", fontSize: 13, lineHeight: 1.6 }}
+              >
+                <span className="pretty">{t.history.missingBand}</span>
+                <button type="button" className="btn btn-small" onClick={() => void relinkSource()}>
+                  {t.history.relink}
+                </button>
+              </div>
+              {relinkError ? <ErrorBand error={relinkError} /> : null}
+            </div>
+          ) : null}
 
           {/* 書き起こしの繰り返しの注意（約束 版4。本文の上に注意の帯。押すとその時刻の行へ） */}
           {repeats.length ? (
@@ -229,7 +249,7 @@ export function ResultScreen() {
                   key={`${n.startSec}-${n.endSec}`}
                   type="button"
                   className="band-warn"
-                  title="本文のこの箇所へ移る"
+                  title={t.result.repeatTitle}
                   onClick={() => jumpToTime(n.startSec)}
                   style={{
                     display: "flex",
@@ -245,9 +265,9 @@ export function ResultScreen() {
                     cursor: "pointer",
                   }}
                 >
-                  <span>{n.message}</span>
+                  <span>{t.engine.repeat(n)}</span>
                   <span className="nowrap" style={{ fontSize: 12 }}>
-                    この箇所へ移る
+                    {t.result.repeatGo}
                   </span>
                 </button>
               ))}
@@ -262,6 +282,7 @@ export function ResultScreen() {
             matchIndex={matchIndex}
             durationSec={durationSec}
             jobId={jobId}
+            playable={playable}
           />
         </div>
 

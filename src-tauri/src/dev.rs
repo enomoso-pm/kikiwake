@@ -70,6 +70,18 @@ pub fn dev_read(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))
 }
 
+/// ファイルやフォルダがあるか（履歴から消しても、元の録音と保存したファイルが残るかを見る）
+#[tauri::command]
+pub fn dev_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
+
+/// 名前を変える（元の録音が見つからない場合を作る・元に戻す）
+#[tauri::command]
+pub fn dev_rename(from: String, to: String) -> Result<(), String> {
+    std::fs::rename(&from, &to).map_err(|e| format!("{from} → {to}: {e}"))
+}
+
 /// 見た目の比べ用の記録を書く
 #[tauri::command]
 pub fn dev_write(path: String, text: String) -> Result<(), String> {
@@ -121,6 +133,74 @@ fn snapshot(webview: *mut std::ffi::c_void, path: String, tx: std::sync::mpsc::S
         let wk = &*(webview as *const WKWebView);
         wk.takeSnapshotWithConfiguration_completionHandler(None, &done);
     }
+}
+
+/// Mac のメニューの文言（約束 版7 の確かめ）: 上に並ぶメニューの名前 → 中の項目の文言（区切りは除く）
+#[tauri::command]
+pub fn dev_menu(app: AppHandle) -> Result<serde_json::Value, String> {
+    use tauri::menu::MenuItemKind;
+    let text = |k: &MenuItemKind<tauri::Wry>| match k {
+        MenuItemKind::MenuItem(i) => i.text(),
+        MenuItemKind::Submenu(i) => i.text(),
+        MenuItemKind::Predefined(i) => i.text(),
+        MenuItemKind::Check(i) => i.text(),
+        MenuItemKind::Icon(i) => i.text(),
+    };
+    let menu = app.menu().ok_or("メニューが無い")?;
+    let mut out = Vec::new();
+    for k in menu.items().map_err(|e| e.to_string())? {
+        if let MenuItemKind::Submenu(sub) = &k {
+            let mut items = Vec::new();
+            for i in sub.items().map_err(|e| e.to_string())? {
+                let t = text(&i).map_err(|e| e.to_string())?;
+                if !t.is_empty() {
+                    items.push(t);
+                }
+            }
+            out.push(serde_json::json!({ "title": sub.text().map_err(|e| e.to_string())?, "items": items }));
+        }
+    }
+    Ok(serde_json::Value::Array(out))
+}
+
+/// Mac が実際に出しているメニュー（NSApp.mainMenu）の文言。Tauri のメニューのほかに macOS が足す項目も入る。
+/// 「Mac が用意する部品」の言語（Info.plist の対応言語の宣言で変わる）を確かめるため
+#[tauri::command]
+pub fn dev_native_menu(app: AppHandle) -> Result<Vec<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<String>>();
+        app.run_on_main_thread(move || {
+            use objc2::MainThreadMarker;
+            use objc2_app_kit::NSApplication;
+            let mut out = Vec::new();
+            if let Some(mtm) = MainThreadMarker::new() {
+                if let Some(menu) = NSApplication::sharedApplication(mtm).mainMenu() {
+                    for top in menu.itemArray().iter() {
+                        let Some(sub) = top.submenu() else { continue };
+                        let items: Vec<String> =
+                            sub.itemArray().iter().map(|i| i.title().to_string()).filter(|t| !t.is_empty()).collect();
+                        out.push(format!("{}: {}", top.title(), items.join("・")));
+                    }
+                }
+            }
+            let _ = tx.send(out);
+        })
+        .map_err(|e| e.to_string())?;
+        rx.recv_timeout(std::time::Duration::from_secs(5)).map_err(|_| "読めない（時間切れ）".to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err("Mac だけ".into())
+    }
+}
+
+/// 窓の中身の大きさを変える（画面の CSS の座標。英語のはみ出しを 1200×800 と最小の 900×560 で測る）
+#[tauri::command]
+pub fn dev_resize(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let win = app.get_webview_window("main").ok_or("窓が無い")?;
+    win.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())
 }
 
 /// 終わり。確かめずにアプリを閉じる（NG があれば終了コード 1）

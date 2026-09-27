@@ -61,8 +61,16 @@ export const tauriApi: KikiwakeApi = {
     tauri().core.convertFileSrc(await invoke<string>("recording_clip", { jobId, startSec, endSec })),
   revealInFileManager: (path) => invoke("reveal_in_file_manager", { path }),
 
-  // ---- 全体（版5・版6） ----
+  // ---- 全体（版5・版7） ----
   onCloseRequested: (cb) => on<null>("close-requested", () => cb()),
   closeApp: () => invoke("close_app"),
-  setUnsavedChanges: (unsaved) => invoke("set_unsaved_changes", { unsaved }),
+  // 版7: 画面の言語（外枠がメニューを作り直し、既定の保存先の名前と保存するファイルの中の言葉を合わせる）
+  setLocale: (locale) => invoke("set_locale", { locale }),
+
+  // ---- 版8: 履歴・閉じたときの状態 ----
+  listHistory: () => invoke("list_history"),
+  openHistory: (jobId) => invoke("open_history", { jobId }),
+  deleteHistory: (jobId) => invoke("delete_history", { jobId }),
+  relinkSource: (jobId, path) => invoke("relink_source", { jobId, path }),
+  saveDraft: (jobId, draft) => invoke("save_draft", { jobId, draft }),
 };

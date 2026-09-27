@@ -362,6 +362,57 @@ pub fn render_markdown(utts: &[Utterance], meta: &Meta, tt: &TalkTime) -> String
     lines.join("\n") + "\n"
 }
 
+/// 英語の画面で保存する .md（約束 版7）。並びは render_markdown と同じで、見出し・確認用の欄を英語に、「話者A」を「Speaker A」にする。
+/// 日本語の .md は render_markdown のまま（Python 版と一字一句同じ）
+pub fn render_markdown_en(utts: &[Utterance], meta: &Meta, tt: &TalkTime) -> String {
+    use crate::lang::{engine_name_en, speaker_en};
+    let dur = duration_of(meta, utts);
+    let long_form = dur >= 3600.0;
+    let total = or_one(pycompat::sum(tt.values().copied()));
+    let people: Vec<String> = tt
+        .iter()
+        .map(|(k, &v)| format!("{} {} ({})", speaker_en(k), fmt_ts(v, long_form), pycompat::percent0(v / total)))
+        .collect();
+    let get = |v: &Option<String>| v.clone().unwrap_or_default();
+    let mut lines = vec![
+        format!("# Speaker-labeled transcript: {}", get(&meta.title)),
+        String::new(),
+        format!("- Source file: {}", get(&meta.source)),
+        format!("- Length: {} / Speakers: {} — {}", fmt_ts(dur, long_form), tt.len(), people.join(", ")),
+        format!(
+            "- Processing: speaker detection by {} / transcription by {} / {}",
+            engine_name_en(&get(&meta.diarizer)),
+            engine_name_en(&get(&meta.asr)),
+            get(&meta.created)
+        ),
+        "- Speakers were identified automatically from their voices. `*` marks lines where someone else was speaking at the same time"
+            .to_string(),
+        String::new(),
+    ];
+    for u in utts.iter().filter(|u| u.speaker != UNKNOWN) {
+        let mark = if u.overlap { "*" } else { "" };
+        lines.push(format!("[{}] {}{}: {}", fmt_ts(u.start, long_form), speaker_en(&u.speaker), mark, u.text));
+    }
+    let unknown: Vec<&Utterance> = utts.iter().filter(|u| u.speaker == UNKNOWN).collect();
+    if !unknown.is_empty() {
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                "## Unassigned: parts without a speaker",
+                "",
+                "Text transcribed where no one's voice was detected. It's often silence misheard as speech, \
+                 but speaker detection may also have missed someone, so check the original recording if needed.",
+                "",
+            ]
+            .map(String::from),
+        );
+        lines.extend(unknown.iter().map(|u| format!("[{}] {}", fmt_ts(u.start, long_form), u.text)));
+    }
+    lines.join("\n") + "\n"
+}
+
 /// Python の `x or 1.0`（0 なら 1.0）
 pub(crate) fn or_one(x: f64) -> f64 {
     if x == 0.0 { 1.0 } else { x }

@@ -60,7 +60,7 @@ pub fn inspect_file(engine: &Engine, path: &Path) -> Result<FileInfo, AppError> 
                 fi.estimate = Estimate { min_sec: 1, max_sec: 10 };
             }
             fi.previous = Some(Previous {
-                out_dir: default_out_dir(Path::new(&src.path)).display().to_string(),
+                out_dir: default_out_dir(Path::new(&src.path), engine.locale()).display().to_string(),
                 diarization_reusable: job.diarization().is_file(),
                 processed_at: old.processed_at,
                 result_reusable,

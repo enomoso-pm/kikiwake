@@ -1,7 +1,13 @@
 // Kikiwake 画面 ⇄ エンジンの受け渡しの約束（データの形）。ここが正。
 // 変更したら contract/README.md の履歴に書く。
-// 版 6（2026-09-26）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
+// 版 8（2026-09-27）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
 // 書き起こしは正確さ優先（Whisper large-v3）だけ。版1にあった品質の選択（速さ優先）は無くした。
+
+/**
+ * 版7で追加。画面の言語（setLocale で知らせる）。エンジンはこれで Mac のメニュー・既定の保存先の名前・保存するファイルの中の言葉を合わせる。
+ * エンジンが返す文（AppError.message・EnvironmentItem.message・ラベルの「話者A」など）は日本語のままで、訳すのは画面側
+ */
+export type Locale = "ja" | "en";
 
 /** 処理の段階（この順に進む） */
 export type Stage = "extract" | "diarize" | "transcribe" | "merge";
@@ -89,8 +95,8 @@ export interface FileDragOver {
 export interface JobStarted {
   jobId: string;
   /**
-   * 保存先の既定。元ファイルの隣の「<名前>_文字起こし/」。
-   * 作業用のファイル（音声・話者判定・書き起こし・names.json など）はアプリのキャッシュに置き、ここには保存したファイルだけを書く
+   * 保存先の既定。元ファイルの隣の「<名前>_文字起こし/」（英語の画面では「<名前>_transcript/」。版7）。
+   * 作業用のファイル（音声・話者判定・書き起こし・names.json など）は作業フォルダ（そのまま履歴。版8）に置き、ここには保存したファイルだけを書く
    */
   outDir: string;
 }
@@ -114,6 +120,8 @@ export interface JobDone {
   unresolvedCount: number; // 確認用に回った件数
   /** 版6で追加。この録音で前に確定した名前（applyNames で渡したもの）。名前付けの画面に最初から入れておく。無ければ省略 */
   names?: Names;
+  /** 版8で追加。閉じたときの状態（saveDraft で渡したもの）。書き起こしが変わっていれば（行の id が合わないので）省略 */
+  draft?: JobDraft;
 }
 
 export interface JobFailed {
@@ -265,6 +273,7 @@ export type SaveFormat = "md" | "txt" | "json";
 /**
  * 保存するファイルの名前は Python 版と同じ: 名前が1つでも使われていれば transcript_named.<形式>、無ければ transcript.<形式>。
  * .md は Python 版と同じ書式、.json は transcript.json と同じ形、.txt は本文の行（「[00:12] 佐藤: …」）だけで、確認用は末尾。
+ * 版7: 中の言葉は setLocale で知らせた画面の言語。英語なら見出し・確認用の欄を英語に、「話者A」「不明」を「Speaker A」「Unknown」に（ファイル名は同じ）
  */
 export interface SaveRequest {
   dir: string;
@@ -283,6 +292,67 @@ export interface SaveResult {
   existing?: string[];
 }
 
+// ---- 履歴・閉じたときの状態（版8） -------------------------------------------------------
+
+/** 版8: 履歴の1件の状態。書き終えた（done）か、途中（中止した・止まった・処理中に閉じた）か */
+export type HistoryStatus = "done" | "unfinished";
+
+/**
+ * 版8で追加。履歴の1件（listHistory）。作業フォルダ（~/Library/Application Support/Kikiwake/jobs/）がそのまま履歴。
+ * 並びは最後に使った順（処理・名前の確定・手直しのどれか）。いま処理中の録音は入らない
+ */
+export interface HistoryItem {
+  jobId: string;
+  /** 元ファイルの名前 */
+  name: string;
+  /** 元ファイルの場所（処理したとき） */
+  path: string;
+  durationSec: number;
+  /** 最後に処理した日 YYYY-MM-DD */
+  processedAt: string;
+  status: HistoryStatus;
+  /** 話者のラベルの数（話者の判定まで済んでいれば） */
+  speakers?: number;
+  /** 名前を確定している */
+  named: boolean;
+  /** ファイルに保存していない手直しがある（JobDraft.unsaved） */
+  unsavedEdits: boolean;
+  /** 元ファイルが今もある（同じ場所・大きさ・更新日時）。無ければ行の再生と続きからの再開はできない（書き起こしは読める） */
+  sourceAvailable: boolean;
+  /** 途中のとき、話者の判定まで済んでいる（続きからは書き起こしから） */
+  diarizationKept: boolean;
+}
+
+/** 版8で追加。履歴から開いた録音（openHistory・relinkSource）。JobDone と同じ中身に、元ファイルがあるかを足したもの */
+export interface HistoryOpened extends JobDone {
+  /** false なら行の再生はできない（サンプルの声と確認用の手がかりの声は作業フォルダにあるので鳴る） */
+  sourceAvailable: boolean;
+}
+
+/**
+ * 版8で追加。閉じたときの状態（2026-09-27 決定: 閉じても・別の録音へ移っても消えず、開き直すと閉じたときの画面に戻る）。
+ * 形は画面が決め、エンジンは中身を見ずに作業フォルダ（draft.json）に置いて返す（unsaved だけ履歴の一覧で使う）。
+ * 行の id に結びつくので、書き起こし（結果の画面の行）が変わったらエンジンは返さない
+ */
+export interface JobDraft {
+  /** 閉じたときの画面 */
+  screen: "naming" | "result";
+  /** ファイルに保存していない手直しがある（履歴の一覧に出す） */
+  unsaved: boolean;
+  /** 名前付けの画面で入れかけた名前（ラベル → 入力のまま）。確定した名前は JobDone.names */
+  names?: Record<string, string>;
+  /** 結果の画面: 行ごとの名前・確定した確認用の行・直した文字の履歴（最後が今の文字） */
+  lineNames?: Record<string, string>;
+  confirmed?: string[];
+  textHistory?: Record<string, string[]>;
+  /** 結果の画面: 表示しない人・保存の形式・保存先・最後に保存したときの手直しの記録と保存したファイル */
+  hidden?: string[];
+  formats?: SaveFormat[];
+  outDir?: string;
+  savedEdits?: string | null;
+  savedFiles?: string[];
+}
+
 // ---- エラー ------------------------------------------------------------------------
 
 export type ErrorCode =
@@ -296,7 +366,8 @@ export type ErrorCode =
   | "checksum_mismatch"
   | "engine_failed"
   | "out_of_memory"
-  | "cancelled";
+  | "cancelled"
+  | "not_same_recording"; // 版8: 履歴の「ファイルを選び直す」で、大きさか長さが元の録音と違う
 
 export interface AppError {
   code: ErrorCode;

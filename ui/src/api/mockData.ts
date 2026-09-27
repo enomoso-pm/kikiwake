@@ -4,6 +4,7 @@ import type {
   EnvironmentCheck,
   ErrorCode,
   FileInfo,
+  HistoryItem,
   JobDone,
   JobProgress,
   Line,
@@ -21,6 +22,7 @@ import errorsJson from "@contract/fixtures/errors.json";
 import file68Json from "@contract/fixtures/file_info_68min_example.json";
 import fileJson from "@contract/fixtures/file_info.json";
 import fileUnsupportedJson from "@contract/fixtures/file_unsupported_example.json";
+import historyJson from "@contract/fixtures/history_example.json";
 import jobProgressJson from "@contract/fixtures/job_progress_example.json";
 import modelsDownloadingJson from "@contract/fixtures/models_downloading_example.json";
 import modelsInitialJson from "@contract/fixtures/models_initial.json";
@@ -69,6 +71,8 @@ export const fixtures = {
   transcript: () => copy<TranscriptView>(transcriptJson),
   transcriptUnresolved: () => copy<TranscriptView>(transcriptUnresolvedJson),
   transcriptRepeat: () => copy<TranscriptView>(transcriptRepeatJson),
+  /** 版8: 履歴の一覧の作例 */
+  history: () => copy<HistoryItem[]>(historyJson),
 };
 
 export function fixtureError(code: ErrorCode, detail?: string): AppError {

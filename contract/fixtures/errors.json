@@ -42,5 +42,9 @@
  "cancelled": {
   "code": "cancelled",
   "message": "中止しました。話者の判定結果は残してあるので、やり直すと続きから始めます。"
+ },
+ "not_same_recording": {
+  "code": "not_same_recording",
+  "message": "選んだファイルは、この録音と大きさか長さが違います。元の録音を選んでください。"
  }
 }

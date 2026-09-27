@@ -7,6 +7,7 @@ pub mod engines;
 pub mod env;
 pub mod error;
 pub mod files;
+pub mod history;
 pub mod job;
 pub mod log;
 pub mod models;

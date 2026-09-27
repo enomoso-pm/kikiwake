@@ -5,10 +5,14 @@ import type {
   EnvironmentCheck,
   FileDragOver,
   FileInfo,
+  HistoryItem,
+  HistoryOpened,
   JobDone,
+  JobDraft,
   JobFailed,
   JobProgress,
   JobStarted,
+  Locale,
   ModelId,
   ModelInfo,
   Names,
@@ -79,15 +83,35 @@ export interface KikiwakeApi {
 
   // ---- 全体（版5で追加） ----
   /**
-   * 処理中、または setUnsavedChanges(true) のあいだに窓を閉じようとした（⌘Q を含む）。どちらでもなければ届かず、確かめずにそのまま閉じる。
-   * 画面は理由に合った閉じる確認（UI 画面仕様書 §2.5・保存していない手直し）を出し、「閉じる」なら closeApp() を呼ぶ。やめるなら何もしない
+   * 処理中に窓を閉じようとした（⌘Q を含む）。処理中でなければ届かず、確かめずにそのまま閉じる。
+   * 画面は閉じる確認（UI 画面仕様書 §2.5）を出し、「閉じる」なら closeApp() を呼ぶ。やめるなら何もしない。
+   * 版8: 保存していない手直しがあっても確かめない（手直しは saveDraft で作業フォルダに残り、開き直すと戻る）。版6の setUnsavedChanges は無くした
    */
   onCloseRequested(cb: () => void): Unsubscribe;
-  /**
-   * 版6で追加。保存していない手直しがあるかをエンジンに知らせる（変わるたびに呼ぶ）。
-   * true のあいだと処理中は、窓を閉じようとすると閉じずに onCloseRequested が届く。画面が応えられなくなっても、false なら閉じられる
-   */
-  setUnsavedChanges(unsaved: boolean): Promise<void>;
   /** 版5で追加。処理を止めてアプリを閉じる（話者の判定まで済んでいれば、その結果は残り、次に同じ録音を処理すると使い回す） */
   closeApp(): Promise<void>;
+  /**
+   * 版7で追加。画面の今の言語をエンジンに知らせる（起動したとき・切り替えたとき）。エンジンはこれで Mac のメニューを作り直し、
+   * 既定の保存先の名前（JobDone.outDir・FileInfo.previous.outDir）と保存するファイル（saveOutputs）の中の言葉を合わせる。
+   * 覚えておき、次に開いたときのメニューも最初からこの言語で作る。知らせる前は、前に知らせた言語かこの Mac の言語（日本語なら日本語、それ以外は英語）
+   */
+  setLocale(locale: Locale): Promise<void>;
+
+  // ---- 履歴・閉じたときの状態（版8） ----
+  /** 履歴の一覧（最後に使った順）。書き終えた録音と、途中の録音（中止した・止まった・処理中に閉じた）の両方。いま処理中の録音は入らない */
+  listHistory(): Promise<HistoryItem[]>;
+  /**
+   * 履歴から書き終えた録音を開く（処理はしない。書き起こしはそのまま）。元ファイルがあれば再生のために音声を取り出す（68 分の録音で約1秒）。
+   * 元ファイルが無くても開ける（sourceAvailable: false。行の再生だけできない）。途中の録音は startJob(path) で続きから
+   */
+  openHistory(jobId: string): Promise<HistoryOpened>;
+  /** 履歴から消す（その録音の作業フォルダを丸ごと）。元の録音・録画と、保存先に保存した文字起こしのファイルは消さない。元に戻せない */
+  deleteHistory(jobId: string): Promise<void>;
+  /**
+   * 元ファイルを選び直す（移動した・名前を変えた・外付けへ移した録音を結び直す）。大きさと長さが同じなら同じ録音とみなし、
+   * 作業フォルダを付け替えて開く（jobId は新しくなる。以後はファイルの画面で選んでも、この履歴に当たる）。違えば AppError not_same_recording
+   */
+  relinkSource(jobId: string, path: string): Promise<HistoryOpened>;
+  /** 閉じたときの状態を作業フォルダに置く（変わるたびに呼ぶ）。開き直すと JobDone.draft・HistoryOpened.draft で戻る */
+  saveDraft(jobId: string, draft: JobDraft): Promise<void>;
 }

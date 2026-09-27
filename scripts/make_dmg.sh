@@ -1,5 +1,5 @@
 #!/bin/bash
-# 配る .dmg を作る（Kikiwake.app・「アプリケーション」への近道・はじめに読んでください.txt）。
+# 配る .dmg を作る（Kikiwake.app・「アプリケーション」への近道・はじめに読んでください.txt・英語の Read Me First.txt）。
 #
 #   bash scripts/make_dmg.sh        # -> build/dist/Kikiwake_<版>_aarch64.dmg と .sha256（照合用の値）
 #
@@ -21,7 +21,7 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 ditto "$APP" "$STAGE/Kikiwake.app"
 ln -s /Applications "$STAGE/アプリケーション"
-cp "$ROOT/scripts/dmg/はじめに読んでください.txt" "$STAGE/"
+cp "$ROOT/scripts/dmg/はじめに読んでください.txt" "$ROOT/scripts/dmg/Read Me First.txt" "$STAGE/"
 
 mkdir -p "$OUT"
 rm -f "$OUT/$NAME" "$OUT/$NAME.sha256"

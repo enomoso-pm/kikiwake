@@ -1,6 +1,7 @@
 // 画面5 結果（UI 画面仕様書 §8）。行ごとの名前・確認用の確定・直した文字は画面が持ち、保存のときに渡す（約束 版3）
 import type { SaveFormat } from "@contract/types";
 import { api } from "../api";
+import { getT } from "../i18n";
 import { toAppError } from "../lib/errors";
 import { cleanName, nameKey } from "../lib/names";
 import { buildEdits, buildRows, menuNames, normalizeEditedText } from "../lib/transcript";
@@ -113,7 +114,7 @@ export function requestRevertAll(): void {
 
 export function revertAllTexts(): void {
   setState({ dialog: null, textHistory: {}, editing: null });
-  showToast("元の文字に戻しました");
+  showToast(getT().toast.reverted);
 }
 
 // ---- 名前を選ぶ欄（§8.6） -----------------------------------------------------------
@@ -203,7 +204,7 @@ export function confirmNamedUnresolved(): void {
     confirmed[id] = true;
   });
   setState({ confirmed });
-  showToast(`${ids.length}件を確定しました`);
+  showToast(getT().toast.confirmed(ids.length));
 }
 
 // ---- 詳細 --------------------------------------------------------------------------

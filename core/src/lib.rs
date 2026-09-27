@@ -5,6 +5,7 @@
 //! 数値（0.3 秒・1.5 秒・90 秒など）は移植元の実測で決めたもの。変えるなら測ってから。
 
 pub mod diar;
+pub mod lang;
 pub mod lines;
 pub mod merge;
 pub mod patterns;

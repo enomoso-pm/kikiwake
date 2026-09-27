@@ -2,6 +2,7 @@
 // 前後の空白を除き、全角と半角の違いは同じとみなす（2026-09-26 決定）。
 // まとまった名前の書き方は、一覧で上にあるラベルの書き方にそろえる。
 import type { Names } from "@contract/types";
+import { getT } from "../i18n";
 
 /** 前後の空白（全角も含む）を除いた名前 */
 export function cleanName(s: string | undefined): string {
@@ -70,30 +71,35 @@ export function peopleCount(grouping: NameGrouping): number {
 
 /** 名前付けの下の帯の1行目（§7.4） */
 export function namingSummary(order: string[], grouping: NameGrouping): string {
-  const n = order.length;
-  const labelsText = n < 10 ? `${n}つのラベル` : `${n}個のラベル`;
-  const merged = grouping.groups.filter((g) => g.labels.length > 1).map((g) => `${g.labels.join("＋")} → ${g.name}`);
-  return `${labelsText} → ${peopleCount(grouping)}人として保存` + (merged.length ? `（${merged.join("、")}）` : "");
+  const t = getT();
+  const merged = grouping.groups
+    .filter((g) => g.labels.length > 1)
+    .map((g) => t.naming.mergedItem(g.labels.map(t.engine.speakerLabel), g.name));
+  return t.naming.saveAs(t.naming.labelCount(order.length), peopleCount(grouping)) + (merged.length ? t.naming.mergedList(merged) : "");
 }
 
 /** 名前付けの下の帯の2行目（§7.4） */
 export function namingSummarySub(grouping: NameGrouping): string {
+  const t = getT();
   return grouping.unnamed.length
-    ? `名前なし：${grouping.unnamed.join("・")}（そのまま残ります）`
-    : "すべてのラベルに名前が付いています";
+    ? t.naming.unnamed(t.common.labels(grouping.unnamed.map(t.engine.speakerLabel)))
+    : t.naming.allNamed;
 }
 
+// 手がかりの種類はエンジンが日本語で返す（Python 版と同じ JSON の鍵）。表示は今の言語で
 const HINT_ORDER = ["自己紹介", "呼びかけ直後"] as const;
 
 /** 手がかりの出どころ: 「自己紹介2・呼びかけ直後1」 */
 export function formatHintSources(sources: Partial<Record<(typeof HINT_ORDER)[number], number>>): string {
+  const t = getT();
   return HINT_ORDER.filter((k) => (sources[k] ?? 0) > 0)
-    .map((k) => `${k}${sources[k]}`)
-    .join("・");
+    .map((k) => t.naming.source(t.engine.hintKind(k), sources[k] ?? 0))
+    .join(t.naming.sourceSep);
 }
 
 /** 名前の手がかり: 「田中（自己紹介2・呼びかけ直後1）」。複数の名前は「・」でつなぐ。無ければ null */
 export function formatHints(hints: Array<{ name: string; sources: Parameters<typeof formatHintSources>[0] }>): string | null {
   if (!hints.length) return null;
-  return hints.map((h) => `${h.name}（${formatHintSources(h.sources)}）`).join("・");
+  const t = getT();
+  return hints.map((h) => t.naming.hint(h.name, formatHintSources(h.sources))).join(t.common.listSep);
 }

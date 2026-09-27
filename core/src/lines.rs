@@ -9,6 +9,7 @@
 //!     （合成会議 519 通り・実録音 9 通りで確認）
 //!   - .txt は本文の行だけ（見出しは入れず、確認用は末尾に）
 //!   - 保存先に同じ名前のファイルがあれば、上書きしてよいか画面が確かめる（`overwrite` が無ければ書かずに一覧を返す）
+//!   - 版7（2026-09-27）: 英語の画面で保存すると、見出し・確認用の欄・「話者A」「不明」を英語にする（crate::lang。日本語は変えない）
 
 use std::fs;
 use std::io;
@@ -17,6 +18,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::lang::Lang;
 use crate::merge::{self, Meta, Names, TalkTime, Turn, UNKNOWN, Utterance, Word};
 use crate::{patterns, pycompat, pyjson};
 
@@ -239,21 +241,31 @@ fn saved_talk_time(turns: &[Turn], names: Option<&Names>, rows: &[LineRow], ed: 
     items.into_iter().collect()
 }
 
-/// .txt: 本文の行だけ（見出しは入れない）。確認用は末尾に。
-pub fn render_txt(utts: &[Utterance], meta: &Meta) -> String {
+/// .txt: 本文の行だけ（見出しは入れない）。確認用は末尾に。英語（約束 版7）では確認用の見出しと「話者A」を英語にする
+pub fn render_txt(utts: &[Utterance], meta: &Meta, lang: Lang) -> String {
     let long_form = merge::duration_of(meta, utts) >= 3600.0;
-    let line = |u: &Utterance| format!("[{}] {}{}: {}", merge::fmt_ts(u.start, long_form), u.speaker, if u.overlap { "*" } else { "" }, u.text);
+    let line = |u: &Utterance| {
+        let who = crate::lang::speaker(lang, &u.speaker);
+        format!("[{}] {}{}: {}", merge::fmt_ts(u.start, long_form), who, if u.overlap { "*" } else { "" }, u.text)
+    };
     let mut out: Vec<String> = utts.iter().filter(|u| u.speaker != UNKNOWN).map(line).collect();
     let unknown: Vec<&Utterance> = utts.iter().filter(|u| u.speaker == UNKNOWN).collect();
     if !unknown.is_empty() {
         out.push(String::new());
-        out.push("確認用（話者を決められなかった部分）".to_string());
+        out.push(
+            match lang {
+                Lang::Ja => "確認用（話者を決められなかった部分）",
+                Lang::En => "Unassigned (parts without a speaker)",
+            }
+            .to_string(),
+        );
         out.extend(unknown.iter().map(|u| format!("[{}] {}", merge::fmt_ts(u.start, long_form), u.text)));
     }
     out.join("\n") + "\n"
 }
 
 /// 保存する中身 [(ファイル名, 文字列)]。名前が1つでも使われていれば transcript_named.*、無ければ transcript.*（Python 版と同じ名前）。
+/// lang は画面の言語（約束 版7）。日本語は Python 版と同じ中身、英語は見出し・確認用の欄・「話者A」「不明」を英語にする（ファイル名は同じ）
 pub fn save_files(
     words: &[Word],
     turns: &[Turn],
@@ -261,6 +273,7 @@ pub fn save_files(
     edits: &LineEdits,
     meta: &Meta,
     formats: &[SaveFormat],
+    lang: Lang,
 ) -> Vec<(String, String)> {
     let rows = lines(words, turns, names);
     let ed = edited(&rows, edits);
@@ -270,10 +283,16 @@ pub fn save_files(
     let stem = if named { "transcript_named" } else { "transcript" };
     formats
         .iter()
-        .map(|f| match f {
-            SaveFormat::Md => (format!("{stem}.md"), merge::render_markdown(&utts, meta, &tt)),
-            SaveFormat::Txt => (format!("{stem}.txt"), render_txt(&utts, meta)),
-            SaveFormat::Json => (format!("{stem}.json"), pyjson::dumps(&utts)),
+        .map(|f| match (f, lang) {
+            (SaveFormat::Md, Lang::Ja) => (format!("{stem}.md"), merge::render_markdown(&utts, meta, &tt)),
+            (SaveFormat::Md, Lang::En) => (format!("{stem}.md"), merge::render_markdown_en(&utts, meta, &tt)),
+            (SaveFormat::Txt, _) => (format!("{stem}.txt"), render_txt(&utts, meta, lang)),
+            (SaveFormat::Json, Lang::Ja) => (format!("{stem}.json"), pyjson::dumps(&utts)),
+            (SaveFormat::Json, Lang::En) => {
+                let en: Vec<Utterance> =
+                    utts.iter().map(|u| Utterance { speaker: crate::lang::speaker_en(&u.speaker).into_owned(), ..u.clone() }).collect();
+                (format!("{stem}.json"), pyjson::dumps(&en))
+            }
         })
         .collect()
 }

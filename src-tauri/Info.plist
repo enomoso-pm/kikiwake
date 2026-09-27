@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Tauri が作る Info.plist に足す分（tauri.conf.json と同じフォルダの Info.plist は自動で合わさる）。
+  対応する言語を日本語と英語と宣言し、macOS が用意する部品（macOS が足すメニューの項目・文字の右クリックのメニュー・
+  「Kikiwake について」の枠など）を Mac の言語に合わせる（2026-09-27 決定）。宣言が無いと、日本語の Mac でもそれらが英語になる。
+  ほかの言語の Mac では開発地域（英語）。画面の言語は別に、画面が決める（ui/src/i18n）
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>ja</string>
+	</array>
+</dict>
+</plist>

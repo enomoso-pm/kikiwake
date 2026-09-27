@@ -2,6 +2,7 @@
 // （ファイル選択の非対応の帯は仕様書 §5.2 のとおり文だけ。copy={false}）
 import type { CSSProperties } from "react";
 import type { AppError } from "@contract/types";
+import { useT } from "../i18n";
 import { copyErrorDetail } from "../store/ui";
 
 export function ErrorBand({
@@ -15,6 +16,7 @@ export function ErrorBand({
   copy?: boolean;
   style?: CSSProperties;
 }) {
+  const t = useT();
   return (
     <div
       className="band-error"
@@ -30,11 +32,11 @@ export function ErrorBand({
       }}
     >
       <span className="pretty" style={{ fontSize: small ? 13 : 14, lineHeight: 1.6 }}>
-        {error.message}
+        {t.engine.error(error)}
       </span>
       {copy ? (
         <button type="button" className="btn-copy" onClick={() => void copyErrorDetail(error)}>
-          詳細をコピー
+          {t.common.copyDetail}
         </button>
       ) : null}
     </div>

@@ -1,6 +1,7 @@
 // 名前を選ぶ欄（UI 画面仕様書 §8.6）。窓の上に浮かべて出す。外を押す・Esc・名前を決める・戻すで閉じる
 import { useEffect } from "react";
 import { formatTimestamp } from "@contract/format";
+import { useT } from "../../i18n";
 import { FREE_NAME_DOT } from "../../lib/colors";
 import { isCommitKey, isEscape } from "../../lib/keys";
 import { nameKey } from "../../lib/names";
@@ -19,6 +20,7 @@ export function NameMenu({
   colorOf: (name: string | null) => string;
   durationSec: number;
 }) {
+  const t = useT();
   const menu = useApp((s) => s.nameMenu);
   const speakers = useApp((s) => s.speakers);
   const appliedNames = useApp((s) => s.appliedNames);
@@ -49,8 +51,8 @@ export function NameMenu({
   const currentKey = row.name ? nameKey(row.name) : null;
   const labelKey = row.labelName ? nameKey(row.labelName) : null;
   const options = [
-    ...labelNames.map((name) => ({ name, dot: colorOf(name), note: !row.unresolved && nameKey(name) === labelKey ? "ラベルの名前" : "" })),
-    ...freeNames.map((name) => ({ name, dot: FREE_NAME_DOT, note: "ここで入力" })),
+    ...labelNames.map((name) => ({ name, dot: colorOf(name), note: !row.unresolved && nameKey(name) === labelKey ? t.nameMenu.labelName : "" })),
+    ...freeNames.map((name) => ({ name, dot: FREE_NAME_DOT, note: t.nameMenu.typedHere })),
   ];
 
   // 置き場所: 名前の左端から 8 左。下に 280 以上の余裕があるか、上より下が広ければ下に
@@ -67,7 +69,7 @@ export function NameMenu({
       <div onClick={closeNameMenu} style={{ position: "fixed", inset: 0, zIndex: 30 }} />
       <div
         role="dialog"
-        aria-label="この行の話者を選ぶ"
+        aria-label={t.nameMenu.aria}
         style={{
           position: "fixed",
           left,
@@ -87,7 +89,7 @@ export function NameMenu({
           gap: 8,
         }}
       >
-        <span style={{ fontSize: 12, color: "var(--ink-3)" }}>この行の話者を選ぶ（{formatTimestamp(row.start, durationSec)}）</span>
+        <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{t.nameMenu.heading(formatTimestamp(row.start, durationSec))}</span>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minHeight: 0, flex: "1 1 auto", overflow: "auto" }}>
           {options.map((o) => {
             const selected = currentKey !== null && nameKey(o.name) === currentKey;
@@ -99,9 +101,9 @@ export function NameMenu({
                 onClick={() => chooseLineName(row.id, o.name)}
               >
                 <span className="dot" style={{ width: 8, height: 8, background: o.dot }} />
-                <span className="nowrap">{o.name}</span>
+                <span className="nowrap">{t.engine.speakerLabel(o.name)}</span>
                 <span className="nowrap" style={{ marginLeft: "auto", fontSize: 11, color: "var(--ink-4)" }}>
-                  {selected ? "選択中" : o.note}
+                  {selected ? t.nameMenu.selected : o.note}
                 </span>
               </button>
             );
@@ -112,7 +114,7 @@ export function NameMenu({
             autoFocus
             className="input"
             value={menu.value}
-            placeholder="ほかの名前を入力"
+            placeholder={t.nameMenu.otherPlaceholder}
             onChange={(e) => setMenuValue(e.target.value)}
             onKeyDown={(e) => {
               if (isCommitKey(e)) {
@@ -125,7 +127,7 @@ export function NameMenu({
             }}
             style={{ width: "100%", boxSizing: "border-box", fontSize: 14, padding: "6px 8px", borderRadius: 5 }}
           />
-          <span style={{ fontSize: 11, color: "var(--ink-4)" }}>{mod} + Enter で決定 ・ Esc で閉じる</span>
+          <span style={{ fontSize: 11, color: "var(--ink-4)" }}>{t.nameMenu.keys(mod)}</span>
         </div>
         {row.override ? (
           <button
@@ -143,7 +145,7 @@ export function NameMenu({
               cursor: "pointer",
             }}
           >
-            {row.unresolved ? "名無しに戻す" : `ラベルの名前に戻す（${row.labelName}）`}
+            {row.unresolved ? t.nameMenu.backToNoName : t.nameMenu.backToLabel(t.engine.speakerLabel(row.labelName ?? ""))}
           </button>
         ) : null}
       </div>

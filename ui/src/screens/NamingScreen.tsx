@@ -3,11 +3,12 @@
 // 話者カードの下にいつも出す（2026-09-26 決定）
 import { useMemo } from "react";
 import { formatTimestamp } from "@contract/format";
-import type { SpeakerCard, SpeakerWarning, UnresolvedHint } from "@contract/types";
+import type { SpeakerCard, UnresolvedHint } from "@contract/types";
 import { api } from "../api";
 import { Bar } from "../components/Bar";
 import { ErrorBand } from "../components/ErrorBand";
 import { PlayProgress, SamplePlayButton } from "../components/PlayButton";
+import { useT } from "../i18n";
 import { labelColors } from "../lib/colors";
 import { percentText, truncate } from "../lib/format";
 import {
@@ -23,19 +24,13 @@ import {
 import { applyNamesAndShow, selectLabel, setName, stepLabel } from "../store/naming";
 import { useApp } from "../store/state";
 
-const WARNING_TEXT: Record<SpeakerWarning, string> = {
-  short_talk: "発言がとても短いラベルです。他の人の声の断片かもしれません。",
-  mixed_voices: "2人の声が混ざっている可能性があります。",
-};
-
-const POSITION: Record<number, string> = { 1: "序盤", 2: "中盤", 3: "終盤" };
-
 /** 候補のボタン（点線）。押すと入力欄をその名前に置き換える */
 function CandidateButton({ label, onClick }: { label: string; onClick: () => void }) {
+  const t = useT();
   return (
     <button
       type="button"
-      title="入力欄に入れる"
+      title={t.naming.insertTitle}
       onClick={onClick}
       style={{
         flex: "none",
@@ -68,6 +63,7 @@ function SpeakerList({
   names: Record<string, string>;
   selected: string;
 }) {
+  const t = useT();
   return (
     <div
       style={{
@@ -105,16 +101,16 @@ function SpeakerList({
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span className="dot" style={{ width: 9, height: 9, background: colors[c.label] }} />
-              <span style={{ fontSize: 14, fontWeight: 600 }}>{c.label}</span>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{t.engine.speakerLabel(c.label)}</span>
               <span className="num" style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-3)" }}>
                 {percentText(c.share)}
               </span>
             </div>
             <span style={{ fontSize: 13, color: own ? "var(--ink)" : "var(--ink-4)", paddingLeft: 17, overflowWrap: "anywhere" }}>
-              {own ? own + (merged ? "（まとめ）" : "") : "名前なし"}
+              {own ? own + (merged ? t.naming.merged : "") : t.naming.noName}
             </span>
             {c.warnings.length ? (
-              <span style={{ fontSize: 11, color: "var(--warn-ink)", paddingLeft: 17 }}>注意あり</span>
+              <span style={{ fontSize: 11, color: "var(--warn-ink)", paddingLeft: 17 }}>{t.naming.hasWarning}</span>
             ) : null}
           </button>
         );
@@ -136,6 +132,7 @@ function SpeakerDetail({
   names: Record<string, string>;
   durationSec: number;
 }) {
+  const t = useT();
   const value = names[card.label] ?? "";
   const key = nameKey(value);
   const group = grouping.byLabel[card.label];
@@ -152,26 +149,26 @@ function SpeakerDetail({
       <div style={{ flex: "1 0 200px", maxWidth: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="dot" style={{ width: 10, height: 10, background: color }} />
-          <span style={{ fontSize: 17, fontWeight: 600 }}>{card.label}</span>
+          <span style={{ fontSize: 17, fontWeight: 600 }}>{t.engine.speakerLabel(card.label)}</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--ink-3)" }}>発言時間</span>
+            <span style={{ color: "var(--ink-3)" }}>{t.naming.talkTime}</span>
             <span className="num">{percentText(card.share)}</span>
           </div>
           <Bar ratio={card.share} height={4} color={color} roundFill={false} />
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--ink-3)" }}>発話</span>
-            <span className="num">{card.utterances}回</span>
+            <span style={{ color: "var(--ink-3)" }}>{t.naming.utterances}</span>
+            <span className="num">{t.naming.times(card.utterances)}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--ink-3)" }}>初登場</span>
+            <span style={{ color: "var(--ink-3)" }}>{t.naming.firstSeen}</span>
             <span className="num">{formatTimestamp(card.firstSec, durationSec)}</span>
           </div>
         </div>
         {card.warnings.map((w) => (
           <div key={w} className="band-warn" style={{ padding: "8px 10px", fontSize: 12, lineHeight: 1.6 }}>
-            {WARNING_TEXT[w]}
+            {t.naming.warning[w]}
           </div>
         ))}
       </div>
@@ -181,13 +178,13 @@ function SpeakerDetail({
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 12px" }}>
             <label htmlFor={`name-${card.label}`} style={{ fontSize: 13, color: "var(--ink-3)", flex: "none" }}>
-              名前
+              {t.naming.nameLabel}
             </label>
             <input
               id={`name-${card.label}`}
               className="input"
               value={value}
-              placeholder={`空けると「${card.label}」のまま`}
+              placeholder={t.naming.placeholder(t.engine.speakerLabel(card.label))}
               onChange={(e) => setName(card.label, e.target.value)}
               style={{
                 flex: "1 1 180px",
@@ -200,15 +197,16 @@ function SpeakerDetail({
             {card.hints
               .filter((h) => nameKey(h.name) !== key)
               .map((h) => (
-                <CandidateButton key={h.name} label={`${h.name} を入れる`} onClick={() => setName(card.label, h.name)} />
+                <CandidateButton key={h.name} label={t.naming.insert(h.name)} onClick={() => setName(card.label, h.name)} />
               ))}
           </div>
           <span style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.6 }}>
-            名前の手がかり：<span style={{ color: "var(--ink)" }}>{clue ?? "見つかりませんでした"}</span>
+            {t.naming.clue}
+            <span style={{ color: "var(--ink)" }}>{clue ?? t.naming.clueNone}</span>
           </span>
           {merged && group ? (
             <div className="band-info" style={{ padding: "8px 12px", borderRadius: 6, fontSize: 13, lineHeight: 1.6 }}>
-              「{group.name}」として {group.labels.join("・")} を1人にまとめます
+              {t.naming.mergeNote(group.name, t.common.labels(group.labels.map(t.engine.speakerLabel)))}
             </div>
           ) : null}
         </div>
@@ -228,7 +226,7 @@ function SpeakerDetail({
                   borderTop: "1px solid var(--line-soft)",
                 }}
               >
-                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{POSITION[s.index] ?? ""}</span>
+                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{t.naming.position(s.index)}</span>
                 <SamplePlayButton playKey={playKey} src={() => api.audioSrc(s.audioPath)} />
                 <span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>
                   {formatTimestamp(s.start, durationSec)}
@@ -242,7 +240,7 @@ function SpeakerDetail({
           })}
           {samples.length === 0 ? (
             <div style={{ padding: "9px 0", borderTop: "1px solid var(--line-soft)", fontSize: 13, color: "var(--ink-4)" }}>
-              聞けるサンプルがありません
+              {t.naming.noSamples}
             </div>
           ) : null}
         </div>
@@ -263,14 +261,15 @@ function UnresolvedHints({
   names: Record<string, string>;
   durationSec: number;
 }) {
+  const t = useT();
   if (!hints.length) return null;
   const currentKey = nameKey(names[selected]);
   return (
     <section className="card" style={{ display: "flex", flexDirection: "column", gap: 10, padding: "18px 22px", borderRadius: 10 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 600 }}>話者を決められなかった部分の名前の手がかり</h2>
+        <h2 style={{ fontSize: 14, fontWeight: 600 }}>{t.naming.hintsTitle}</h2>
         <p className="pretty" style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.6 }}>
-          録音の序盤など、誰の声か決めきれなかった部分で名乗っていた名前です。声を聞いて、どの話者の声か見比べてください。
+          {t.naming.hintsLead}
         </p>
       </div>
       {hints.map((h, hi) => (
@@ -278,10 +277,10 @@ function UnresolvedHints({
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 12px" }}>
             <span style={{ fontSize: 14 }}>
               <span style={{ fontWeight: 600 }}>{h.name}</span>
-              <span style={{ fontSize: 13, color: "var(--ink-3)" }}>（{formatHintSources(h.sources)}）</span>
+              <span style={{ fontSize: 13, color: "var(--ink-3)" }}>{t.naming.hint("", formatHintSources(h.sources))}</span>
             </span>
             {nameKey(h.name) !== currentKey ? (
-              <CandidateButton label={`${h.name} を${selected} に入れる`} onClick={() => setName(selected, h.name)} />
+              <CandidateButton label={t.naming.insertInto(h.name, t.engine.speakerLabel(selected))} onClick={() => setName(selected, h.name)} />
             ) : null}
           </div>
           {h.clips.map((c, ci) => {
@@ -309,6 +308,7 @@ function UnresolvedHints({
 }
 
 export function NamingScreen() {
+  const t = useT();
   const speakers = useApp((s) => s.speakers);
   const hints = useApp((s) => s.hints);
   const names = useApp((s) => s.names);
@@ -327,9 +327,9 @@ export function NamingScreen() {
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div style={{ flex: "none", padding: "24px 32px 18px", borderBottom: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 6 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600 }}>話者に名前を付ける</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 600 }}>{t.naming.title}</h1>
         <p className="pretty" style={{ fontSize: 14, color: "var(--ink-3)", lineHeight: 1.7 }}>
-          声を聞いて、誰の声か名前を入れてください。同じ名前を付けたラベルは1人にまとまります。名前を空けたラベルは「話者A」などのまま残ります。
+          {t.naming.lead}
         </p>
       </div>
 
@@ -341,10 +341,10 @@ export function NamingScreen() {
               <SpeakerDetail card={card} color={colors[card.label]} grouping={grouping} names={names} durationSec={durationSec} />
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <button type="button" className="btn btn-mid" onClick={() => stepLabel(-1)}>
-                  前の話者
+                  {t.naming.prev}
                 </button>
                 <button type="button" className="btn btn-mid" onClick={() => stepLabel(1)}>
-                  次の話者
+                  {t.naming.next}
                 </button>
               </div>
               <UnresolvedHints hints={hints} selected={card.label} names={names} durationSec={durationSec} />
@@ -376,7 +376,7 @@ export function NamingScreen() {
           <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{namingSummarySub(grouping)}</span>
         </div>
         <button type="button" className="btn btn-primary" disabled={applying} onClick={() => void applyNamesAndShow()}>
-          {applying ? "まとめています…" : reached ? "文字起こしに戻る →" : "文字起こしを見る →"}
+          {applying ? t.naming.applying : reached ? t.naming.backToResult : t.naming.showResult}
         </button>
       </div>
     </div>

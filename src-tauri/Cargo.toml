@@ -20,12 +20,14 @@ serde_json = "1"
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 
-# 開発用のビルドの操作役が、画面の中身を画像に撮る（WKWebView の takeSnapshot。src/dev.rs）。製品では使わない。
+# 開発用のビルドの操作役が、画面の中身を画像に撮る（WKWebView の takeSnapshot。src/dev.rs）。
+# 製品では、画面が言語を知らせる前のメニューの言語を、この Mac の言語の並びから決めるのに使う（NSLocale。src/lib.rs）。
 # wry と同じ版の部品に、使う機能だけ足している
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString"] }
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSBitmapImageRep", "NSImage", "NSImageRep", "NSMenu", "NSMenuItem", "NSResponder"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSError", "NSLocale", "NSString"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "block2", "objc2-app-kit"] }
 
 # 処理の流れ（engine）は Tauri に頼らない別の部品。core は Phase 1 の移植（リポジトリ直下）

@@ -8,12 +8,6 @@ import { goTo } from "./ui";
 /** 表示とダウンロードの順（§4.4。downloadModels はこの順に1つずつ取る） */
 export const MODEL_ORDER: readonly ModelId[] = ["nemotron-3-diarization", "whisper-large-v3"];
 
-/** 役割（D11「AI モデル」は役割を先に書く） */
-export const MODEL_ROLE: Partial<Record<ModelId, string>> = {
-  "nemotron-3-diarization": "声を聞き分ける",
-  "whisper-large-v3": "声を文字にする",
-};
-
 export function sortModels(list: ModelInfo[]): ModelInfo[] {
   const rank = (id: ModelId) => {
     const i = MODEL_ORDER.indexOf(id);
