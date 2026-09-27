@@ -21,8 +21,10 @@ APP="$ROOT/src-tauri/target/release/bundle/macos/Kikiwake.app"
 # 置き換えは、合うもののうち後ろに書いたものが勝つので、広いもの（ホーム）を先に書く
 export RUSTFLAGS="--remap-path-prefix=$HOME=/home --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$ROOT=/kikiwake ${RUSTFLAGS:-}"
 if [ -n "${KIKIWAKE_SIGN_IDENTITY:-}" ]; then
-  # 自己署名の証明書は「信頼」の設定が無いと -v（有効なものだけ）の一覧に出ないので、-v を付けずに名前で探す
-  security find-identity -p codesigning | grep -q "\"$KIKIWAKE_SIGN_IDENTITY\"" || {
+  # 自己署名の証明書は「信頼」の設定が無いと -v（有効なものだけ）の一覧に出ないので、-v を付けずに名前で探す。
+  # 一覧を先に受け取ってから探す（パイプの後ろの grep -q は、下の LEFT と同じ理由で「無い」側に倒れることがある）
+  IDS="$(security find-identity -p codesigning)"
+  grep -qF "\"$KIKIWAKE_SIGN_IDENTITY\"" <<<"$IDS" || {
     echo "署名の証明書「$KIKIWAKE_SIGN_IDENTITY」がキーチェーンに無い（security find-identity -p codesigning で確かめる）"
     exit 1
   }
@@ -31,8 +33,9 @@ fi
 (cd "$ROOT/src-tauri" && CI=true "$TAURI" build)
 
 # 署名の確かめ（壊れていると「壊れているため開けません」になり、設定から開く道が無くなる）と、どの署名かを出す
+# （証明書の名前 Authority は -dvv で出る。簡易署名は Signature=adhoc）
 codesign --verify --deep --strict "$APP"
-codesign -dv "$APP" 2>&1 | grep -E "^(Authority|Signature|TeamIdentifier)=" | sed 's/^/署名: /'
+codesign -dvv "$APP" 2>&1 | grep -E "^(Authority|Signature|TeamIdentifier)=" | sed 's/^/署名: /'
 
 # grep -q だと途中で読むのをやめ、pipefail で「見つからない」側に倒れるので、数えてから比べる
 LEFT="$(strings -a "$APP"/Contents/MacOS/* | grep -c "$HOME/" || true)"
