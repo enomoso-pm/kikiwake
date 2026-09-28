@@ -24,8 +24,11 @@ export type Screen = "setup" | "file" | "processing" | "naming" | "result";
 
 export const SCREENS: readonly Screen[] = ["setup", "file", "processing", "naming", "result"];
 
-/** 保存していない手直しの確かめ（閉じる・別の録音へ移る）は 2026-09-27 にやめた（手直しは作業フォルダに残る。約束 版8） */
-export type DialogKind = "cancel" | "close" | "revertAll" | "overwrite";
+/**
+ * 保存していない手直しの確かめ（閉じる・別の録音へ移る）は 2026-09-27 にやめた（手直しは作業フォルダに残る。約束 版8）。
+ * save は「保存…」で開く窓（形式と保存先を選ぶ。2026-09-29）
+ */
+export type DialogKind = "cancel" | "close" | "revertAll" | "overwrite" | "save";
 
 export interface JobView {
   /** startJob が返るまでは null */
@@ -122,10 +125,16 @@ export interface AppState {
   flashId: string | null;
   /** 本文の一覧に「この行へ移って」と頼む（一覧が受けて流す） */
   scrollRequest: { id: string; seq: number; openMenu: boolean } | null;
+  /** 最後に保存したときの形式と保存先（2026-09-29 から、選ぶのは「保存…」の窓。次に開いたときの初めの値は store/savePrefs が覚えている） */
   formats: Record<SaveFormat, boolean>;
   outDir: string;
   saving: boolean;
   saved: { files: string[] } | null;
+  /**
+   * 最後に保存したファイル（約束 版12 の JobDraft.lastSavedFiles）。saved と違い、保存したあとで名前を変えても消さない
+   * （一覧の行の「…」の「Finder で表示」で、前に保存したファイルを見せるため）
+   */
+  lastSaved: string[];
   /**
    * この録音の文字起こしをファイルに保存したことがある（約束 版9 の JobDraft.savedOnce）。保存したあとで名前を変えると
    * saved（「保存しました」）は消えるが、これは残る（一覧の状態の印「保存後に手直し」のため）
@@ -160,6 +169,7 @@ export const resultInitial = (): Pick<
   | "outDir"
   | "saving"
   | "saved"
+  | "lastSaved"
   | "savedOnce"
   | "saveError"
   | "overwrite"
@@ -182,6 +192,7 @@ export const resultInitial = (): Pick<
   outDir: "",
   saving: false,
   saved: null,
+  lastSaved: [],
   savedOnce: false,
   saveError: null,
   overwrite: null,

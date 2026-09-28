@@ -26,6 +26,7 @@ export function draftOf(s: AppState, unsaved: boolean): JobDraft | null {
     savedEdits: s.savedEdits,
     savedFiles: s.saved?.files ?? [],
     savedOnce: s.savedOnce,
+    lastSavedFiles: [...s.lastSaved],
   };
 }
 
@@ -40,6 +41,8 @@ export function stateFromDraft(d: JobDraft): Partial<AppState> {
     saved: d.savedFiles?.length ? { files: [...d.savedFiles] } : null,
     // 版9: 前の版の閉じたときの状態（savedOnce が無い）は、保存したファイルの記録があれば保存したとみなす
     savedOnce: Boolean(d.savedOnce) || Boolean(d.savedFiles?.length),
+    // 版12: 前の版の閉じたときの状態（lastSavedFiles が無い）は、保存したファイルの記録を使う
+    lastSaved: [...(d.lastSavedFiles ?? d.savedFiles ?? [])],
   };
   if (d.formats?.length) out.formats = { md: d.formats.includes("md"), txt: d.formats.includes("txt"), json: d.formats.includes("json") };
   if (d.outDir) out.outDir = d.outDir;

@@ -43,7 +43,7 @@ export interface MockScenario {
   speed: 60 | 600;
   naming: "normal" | "warnings";
   result: "one" | "typical" | "none" | "repeat";
-  save: "normal" | "existing" | "failed";
+  save: "normal" | "existing" | "failed" | "notWritable";
   applyFails: boolean;
   /** 見本: 保存したファイルを移した・消した（Finder で表示すると見つからない） */
   savedMissing: boolean;
@@ -124,12 +124,19 @@ function joinPath(dir: string, name: string): string {
   return /[\\/]$/.test(dir) ? dir + name : dir + sep() + name;
 }
 
-/** 版7: 画面が知らせた言語（エンジンと同じく、既定の保存先の名前を合わせる） */
+/** 版7: 画面が知らせた言語（エンジンと同じく、保存するファイルの名前を合わせる） */
 let locale: Locale = "ja";
-const outDirName = (path: string) => `${stemOf(baseName(path))}_${locale === "en" ? "transcript" : "文字起こし"}`;
+/** 版12: 保存するファイルの名前（拡張子なし）。「<元ファイルの名前>_文字起こし」（英語の画面では「_transcript」） */
+const savedStem = (path: string) => `${stemOf(baseName(path))}_${locale === "en" ? "transcript" : "文字起こし"}`;
 
+/** 版12: 保存先の既定は元ファイルと同じフォルダ（版11までは隣の「<名前>_文字起こし/」） */
 function outDirFor(path: string): string {
-  return joinPath(dirOf(path), outDirName(path));
+  return dirOf(path);
+}
+
+/** 見本の作例: 保存したことがある録音の、保存したファイル */
+function exampleSavedFile(path: string): string {
+  return joinPath(outDirFor(path), `${savedStem(path)}.md`);
 }
 
 // ---- 画面1 初回セットアップ --------------------------------------------------------------
@@ -230,8 +237,6 @@ const pathGen = new Map<string, number>();
 /** 元のファイルの状態の作例（約束 版9 の sourceState。開発用の切替の「案A の作例」から） */
 type SourceCase = "missing" | "changed-same" | "changed-diff";
 const sourceCases = new Map<string, SourceCase>();
-/** 最後に始めた・開いた録音（保存先を選ぶ見本で使う） */
-let currentPath: string | null = null;
 
 const keyOfPath = (path: string): string => {
   const k = pathKey(path);
@@ -447,18 +452,24 @@ const savedFiles = new Set<string>();
 /** 版8: 履歴から開いた録音（作例は合成会議の結果を出す） */
 /** 見本の作例: 保存したことがある録音の閉じたときの状態（保存後に手直しがあれば、手直しした行を1つ） */
 function savedExampleDraft(item: HistoryItem): JobDraft {
+  const file = exampleSavedFile(item.path);
   if (item.unsavedEdits) {
-    return { screen: "result", unsaved: true, savedOnce: true, savedFiles: [], textHistory: { u0: ["（見本）保存したあとで直した文"] } };
+    return {
+      screen: "result",
+      unsaved: true,
+      savedOnce: true,
+      savedFiles: [],
+      lastSavedFiles: [file],
+      textHistory: { u0: ["（見本）保存したあとで直した文"] },
+    };
   }
-  const file = joinPath(outDirFor(item.path), item.named ? "transcript_named.md" : "transcript.md");
-  return { screen: "naming", unsaved: false, savedOnce: true, savedFiles: [file] };
+  return { screen: "naming", unsaved: false, savedOnce: true, savedFiles: [file], lastSavedFiles: [file] };
 }
 
 function opened(item: HistoryItem, sourceAvailable: boolean): HistoryOpened {
   const key = keyOfItem(item);
   itemKeys.set(item.jobId, key);
   jobPaths.set(item.jobId, item.path);
-  currentPath = item.path;
   transcriptDone.add(key);
   diarizationDone.add(key);
   if (item.named && !namesByPath.has(key)) namesByPath.set(key, fixtures.names());
@@ -466,9 +477,11 @@ function opened(item: HistoryItem, sourceAvailable: boolean): HistoryOpened {
   if (names) appliedNames.set(item.jobId, { ...names });
   // 見本の作例で「保存したことがある」録音は、保存したときの記録を持たせる（開いても一覧の印と同じになるように）
   const draft = drafts.get(key) ?? (item.saved ? savedExampleDraft(item) : undefined);
+  // 元のファイルのフォルダが無い（見つからない）録音は、エンジンと同じく保存先の既定を書類フォルダにする
+  const missing = (sourceCases.get(item.jobId) ?? item.sourceState) === "missing";
   return {
     jobId: item.jobId,
-    outDir: outDirFor(item.path),
+    outDir: missing ? osPath("/Users/example/Documents") : outDirFor(item.path),
     speakers: speakersFor().length,
     unresolvedCount: baseTranscript().unresolved.length,
     ...(names && Object.keys(names).length ? { names: { ...names } } : {}),
@@ -576,7 +589,6 @@ export const mockApi: KikiwakeApi = {
     const j: MockJob = { id: `job-mock-${++jobSeq}`, path, key, timers: [], running: true, diarizationKept: reused };
     job = j;
     jobPaths.set(j.id, path);
-    currentPath = path;
     if (transcriptDone.has(key)) {
       // 版6: 前回の書き起こしを使い回す（エンジンは1秒ほど。段階は一瞬で進む）
       const at = (sec: number, stage: JobProgress["stage"], stagePercent: number | null) =>
@@ -638,22 +650,22 @@ export const mockApi: KikiwakeApi = {
   },
   async pickFolder(defaultDir) {
     await wait(200);
-    // 見本: 既定の保存先とデスクトップの間で切り替える（製品では OS のフォルダ選択画面）
-    const path = currentPath ?? scenarioFilePath();
-    const original = outDirFor(path);
-    const desktop = joinPath(osPath("/Users/example/Desktop"), outDirName(path));
-    return defaultDir && pathKey(defaultDir) === pathKey(desktop) ? original : desktop;
+    // 見本: 「書類/議事録」と「デスクトップ」の間で切り替える（製品では OS のフォルダ選択画面）
+    const minutes = osPath("/Users/example/Documents/議事録");
+    const desktop = osPath("/Users/example/Desktop");
+    return defaultDir && pathKey(defaultDir) === pathKey(minutes) ? desktop : minutes;
   },
   async saveOutputs(jobId, req): Promise<SaveResult> {
     await wait(600);
     if (scenario.save === "failed") {
       throw fixtureError("disk_full", "save_outputs: No space left on device (os error 28)\n（見本の作例）");
     }
-    const named =
-      Object.values(appliedNames.get(jobId) ?? {}).some((v) => v.trim()) ||
-      Object.values(req.edits?.names ?? {}).some((v) => v.trim());
-    const base = named ? "transcript_named" : "transcript";
-    const files = req.formats.map((f) => joinPath(req.dir, `${base}.${f}`));
+    if (scenario.save === "notWritable") {
+      throw fixtureError("not_writable", `${req.dir}: Permission denied (os error 13)\n（見本の作例）`);
+    }
+    // 版12: 録音の名前入り（名前を付けたかどうかでは変えない）。選んだフォルダにそのまま書く
+    const path = jobPaths.get(jobId) ?? history.find((h) => h.jobId === jobId)?.path ?? scenarioFilePath();
+    const files = req.formats.map((f) => joinPath(req.dir, `${savedStem(path)}.${f}`));
     const existing = files.filter((f) => scenario.save === "existing" || savedFiles.has(pathKey(f)));
     if (existing.length && !req.overwrite) return { files: [], existing };
     files.forEach((f) => savedFiles.add(pathKey(f)));
@@ -666,7 +678,7 @@ export const mockApi: KikiwakeApi = {
   async revealInFileManager(path) {
     await wait(50);
     // 見本 の作例: 保存したファイルを移した・消した
-    if (scenario.savedMissing && /_(文字起こし|transcript)[\\/]/.test(path)) {
+    if (scenario.savedMissing && /_(文字起こし|transcript)\.(md|txt|json)$/.test(path)) {
       throw fixtureError("file_not_found", `${path}（見本の作例）`);
     }
     const where = scenario.os === "windows" ? "エクスプローラー" : "Finder";
@@ -700,14 +712,18 @@ export const mockApi: KikiwakeApi = {
         const names = namesByPath.get(key);
         const namedSpeakers = names ? namedSpeakersFor(names) : h.namedSpeakers;
         const { namedSpeakers: _fixture, ...rest } = h;
+        const saved = h.status === "done" && (h.saved || Boolean(draft?.savedOnce || draft?.savedFiles?.length));
+        // 版12: 最後に保存したファイル（作例の「保存したことがある」録音は、元ファイルと同じフォルダに保存したことにする）
+        const savedFiles = draft ? (draft.lastSavedFiles ?? draft.savedFiles ?? []) : saved ? [exampleSavedFile(h.path)] : [];
         return {
           ...rest,
           named: names ? Object.values(names).some((v) => v.trim()) : h.named,
           unsavedEdits: h.status === "done" && (draft?.unsaved ?? h.unsavedEdits),
           // 版9: 元のファイルの状態（作例の切替があればそれ）・保存したことがあるか・付けた名前
           sourceState: c ? (c === "missing" ? "missing" : "changed") : h.sourceState,
-          saved: h.status === "done" && (h.saved || Boolean(draft?.savedOnce || draft?.savedFiles?.length)),
+          saved,
           ...(namedSpeakers ? { namedSpeakers } : {}),
+          ...(saved && savedFiles.length ? { savedFiles } : {}),
         };
       });
   },

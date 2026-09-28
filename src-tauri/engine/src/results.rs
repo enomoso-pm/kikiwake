@@ -1,5 +1,6 @@
 //! 名前付けの画面（画面4）と結果の画面（画面5）。作業フォルダの一式から core で組み立てる。
-//! 保存するファイルの名前と書式は Python 版と同じ（transcript_named.md など）。同じ名前のファイルがあれば書かずに existing を返す。
+//! 保存するファイルの書式は Python 版と同じ。名前は録音の名前入り（約束 版12。「定例会議_0926_文字起こし.md」）。
+//! 同じ名前のファイルがあれば書かずに existing を返す。
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,8 +11,8 @@ use kikiwake_core::unresolved::UnresolvedHint;
 use kikiwake_core::view::{self, SpeakerCard, TranscriptView};
 use kikiwake_core::{pyjson, wav};
 
-use crate::error::{io_error, AppError};
-use crate::job::{Engine, JobDir};
+use crate::error::{io_error, save_error, AppError};
+use crate::job::{saved_stem, Engine, JobDir};
 use crate::types::{RepeatNotice, SaveRequest, TranscriptOut};
 
 fn load<T: serde::de::DeserializeOwned>(job: &JobDir, name: &str) -> Result<T, AppError> {
@@ -87,15 +88,29 @@ pub fn get_transcript(engine: &Engine, job_id: &str, named: bool) -> Result<Tran
 }
 
 /// 手直しを当てて保存する。同じ名前のファイルがあれば、overwrite でない限り書かずに existing を返す。
-/// 中の言葉は画面の言語（約束 版7。英語なら見出し・確認用の欄・「Speaker A」を英語に）
+/// 中の言葉は画面の言語（約束 版7。英語なら見出し・確認用の欄・「Speaker A」を英語に）。
+/// ファイルの名前は録音の名前入り（約束 版12。中身は core が作る Python 版と同じもので、名前だけ付け替える）
 pub fn save_outputs(engine: &Engine, job_id: &str, req: &SaveRequest) -> Result<SaveResult, AppError> {
     let job = JobDir::open(&engine.paths, job_id)?;
     let p = parts(&job)?;
     let names = names_of(&job);
     let edits = req.edits.clone().unwrap_or_default();
     let formats: Vec<SaveFormat> = if req.formats.is_empty() { vec![SaveFormat::Md] } else { req.formats.clone() };
-    let files = lines::save_files(&p.words, &p.turns, names.as_ref(), &edits, &p.meta, &formats, engine.locale());
-    lines::write_files(Path::new(&req.dir), &files, req.overwrite.unwrap_or(false)).map_err(|e| io_error(&e, &req.dir))
+    let lang = engine.locale();
+    let stem = saved_stem(Path::new(&job.source()?.path), lang);
+    let files: Vec<(String, String)> = lines::save_files(&p.words, &p.turns, names.as_ref(), &edits, &p.meta, &formats, lang)
+        .into_iter()
+        .map(|(name, body)| (renamed(&name, &stem), body))
+        .collect();
+    lines::write_files(Path::new(&req.dir), &files, req.overwrite.unwrap_or(false)).map_err(|e| save_error(&e, &req.dir))
+}
+
+/// 「transcript_named.md」→「<stem>.md」（拡張子はそのまま）
+fn renamed(name: &str, stem: &str) -> String {
+    match Path::new(name).extension() {
+        Some(ext) => format!("{stem}.{}", ext.to_string_lossy()),
+        None => stem.to_string(),
+    }
 }
 
 /// 録音の start〜end 秒を切り出した WAV（結果の画面の行の再生）。同じ範囲は前に作ったものを使う。
@@ -133,4 +148,17 @@ pub fn reveal_in_file_manager(path: &Path) -> Result<(), AppError> {
     }
     cmd.arg(path).status().map_err(|e| io_error(&e, "Finder"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_files_take_the_recording_name() {
+        // 約束 版12: core が作る Python 版の名前（中身はそのまま）を、録音の名前入りに付け替える
+        assert_eq!(renamed("transcript_named.md", "定例会議_0926_文字起こし"), "定例会議_0926_文字起こし.md");
+        assert_eq!(renamed("transcript.json", "定例会議_0926_文字起こし"), "定例会議_0926_文字起こし.json");
+        assert_eq!(renamed("transcript_named.txt", "Weekly_transcript"), "Weekly_transcript.txt");
+    }
 }

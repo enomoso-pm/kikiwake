@@ -93,6 +93,24 @@ export function basename(path: string): string {
   return parts.length ? parts[parts.length - 1] : path;
 }
 
+/** パスの最後の部分を除いた所（Mac の / と Windows の \ の両方）。区切りが無ければ空 */
+export function dirname(path: string): string {
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return i > 0 ? path.slice(0, i) : i === 0 ? path.slice(0, 1) : "";
+}
+
+/**
+ * フォルダの見せる名前（保存先の選択肢）。最後の部分だけで、ホームの中のフォルダ（/Users/名前/Documents など）と /Users/Shared は
+ * Mac の Finder が見せる名前にする（homeFolders。英語の画面では空＝そのまま）
+ */
+export function folderLabel(path: string, homeFolders: Record<string, string>): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const last = parts.length ? parts[parts.length - 1] : path;
+  const home = parts.length === 3 && parts[0] === "Users";
+  const shared = parts.length === 2 && parts[0] === "Users" && last === "Shared";
+  return (home || shared) && homeFolders[last] ? homeFolders[last] : last;
+}
+
 /** 字数（サロゲートペアを1字と数える） */
 export function countChars(s: string): number {
   let n = 0;

@@ -265,6 +265,7 @@ pub fn render_txt(utts: &[Utterance], meta: &Meta, lang: Lang) -> String {
 }
 
 /// 保存する中身 [(ファイル名, 文字列)]。名前が1つでも使われていれば transcript_named.*、無ければ transcript.*（Python 版と同じ名前）。
+/// アプリの保存では、エンジンが録音の名前入り（「<元の名前>_文字起こし.md」。約束 版12）に付け替える（中身はこのまま）。
 /// lang は画面の言語（約束 版7）。日本語は Python 版と同じ中身、英語は見出し・確認用の欄・「話者A」「不明」を英語にする（ファイル名は同じ）
 pub fn save_files(
     words: &[Word],

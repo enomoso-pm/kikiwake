@@ -17,6 +17,7 @@ export function SidebarIcon() {
   );
 }
 
+/** 行の「…」（その他の操作。行の右上の小さなボタン。2026-09-29 にごみ箱から替えた） */
 export function MoreIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
@@ -27,7 +28,6 @@ export function MoreIcon() {
   );
 }
 
-/** 設定（つまみの付いた横線） */
 export function SlidersIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">

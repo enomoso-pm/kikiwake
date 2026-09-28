@@ -25,6 +25,8 @@ const ERRORS: Record<string, string> = {
   engine_failed: "Something went wrong during transcription. Please try again. If it keeps happening, copy the details and let us know.",
   out_of_memory: "Ran out of memory. Close other apps and try again.",
   not_same_recording: "The file you chose differs from this recording in size or length. Choose the original recording.",
+  not_writable: "Can't save to this folder (you don't have permission to write to it). Click “Save…” and choose another folder.",
+  save_failed: "Couldn't save. Check the save location and try again. If it keeps happening, copy the details and let us know.",
 };
 
 /** 動作条件の表示文（エンジンの文そのものから） */
@@ -171,15 +173,12 @@ export const en: Messages = {
       retranscribe: "Transcribe as a new recording",
     },
     tabs: { aria: "Recording", speakers: "Speakers", transcript: "Transcript" },
-    more: "More actions",
-    menu: {
-      revealSaved: (isMac: boolean) => (isMac ? "Show saved files in Finder" : "Show saved files in File Explorer"),
-      revealSource: (isMac: boolean) => (isMac ? "Show original file in Finder" : "Show original file in File Explorer"),
-      relink: "Choose the original file again",
-      cancel: "Stop transcribing",
-      dequeue: "Remove from queue",
-      delete: "Remove from list…",
-    },
+    /** The “…” on a row in the list (2026-09-29): Show in Finder (saved files) and Delete… */
+    rowMenu: "More",
+    rowMenuAria: (name: string) => `More actions for “${name}”`,
+    notSavedYet: "Not saved yet",
+    remove: "Delete…",
+    dequeue: "Remove from queue",
     stoppedTitle: "Stopped",
     resume: "Resume",
     enqueue: "Add to queue",
@@ -200,10 +199,10 @@ export const en: Messages = {
     savedMissingBody: "They may have been moved or deleted. The transcript and your edits are still on this Mac, so saving again recreates them.",
     toTranscript: "Open the transcript",
     dismiss: "Close",
-    deleteTitle: "Remove from the list?",
-    deleteBody: (name: string) =>
-      `The transcript, names, and edits for “${name}” will be deleted from this Mac. The original file and any files you saved won't be deleted. This can't be undone.`,
-    deletedToast: "Removed from the list",
+    deleteTitle: (name: string) => `Delete “${name}”?`,
+    deleteBody: "The transcript, names, and edits stored on this Mac will be deleted. This can't be undone.",
+    deleteKeeps: "The original file and any files you saved won't be deleted.",
+    deletedToast: "Deleted",
     dropTitle: "Drop to add it as a new recording",
     /** Stopped recordings, playback without the original file, and the delete button (moved from the old History screen, 2026-09-27) */
     unfinishedDiar: "Voice separation is done",
@@ -350,12 +349,30 @@ export const en: Messages = {
     backToLabel: (name: string) => `Reset to the speaker's name (${name})`,
   },
 
+  /** Saving (2026-09-29): the bar has only “Save…”; format and folder are chosen in the window it opens and remembered */
   save: {
-    saveTo: "Save to",
-    change: "Change folder",
-    saved: (n: number) => `Saved (${n} ${plural(n, "file", "files")})`,
+    open: "Save…",
     saving: "Saving…",
+    title: "Save",
+    formats: "Format",
+    formatHint: { md: "Readable document with headings", txt: "Transcript lines only", json: "Data for other tools" },
+    folder: "Save to",
+    sameAsSource: (folder: string) => `Same folder as the original (${folder})`,
+    sourceFolderGone: (folder: string) => `${folder} (the original file's folder can't be found)`,
+    pickOther: "Choose another folder…",
+    homeFolders: {
+      Desktop: "Desktop",
+      Documents: "Documents",
+      Downloads: "Downloads",
+      Movies: "Movies",
+      Music: "Music",
+      Pictures: "Pictures",
+      Public: "Public",
+      Shared: "Shared",
+    } as Record<string, string>,
+    cancel: "Cancel",
     save: "Save",
+    savedToast: (file: string, more: number) => (more > 0 ? `Saved “${file}” and ${more} more` : `Saved “${file}”`),
   },
 
   detail: {

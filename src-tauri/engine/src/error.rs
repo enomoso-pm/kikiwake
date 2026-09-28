@@ -86,6 +86,21 @@ impl AppError {
         Self::new("not_same_recording", "選んだファイルは、この録音と大きさか長さが違います。元の録音を選んでください。")
     }
 
+    /// 版11: 保存先のフォルダに書き込めない（書き込む許可が無い・読み取り専用のディスク）
+    pub fn not_writable() -> Self {
+        Self::new(
+            "not_writable",
+            "このフォルダには保存できません（書き込む許可がありません）。「保存…」の保存先で、別のフォルダを選んでください。",
+        )
+    }
+    /// 版11: そのほかの理由で保存できない（空き容量が無いときは disk_full）
+    pub fn save_failed() -> Self {
+        Self::new(
+            "save_failed",
+            "保存できませんでした。保存先を確かめて、もう一度保存してください。続く場合は詳細をコピーして連絡してください。",
+        )
+    }
+
     pub fn is_cancelled(&self) -> bool {
         self.code == "cancelled"
     }
@@ -97,6 +112,19 @@ pub fn io_error(e: &std::io::Error, what: &str) -> AppError {
         return AppError::disk_full(2_000_000_000).with_detail(format!("{what}: {e}"));
     }
     AppError::engine_failed().with_detail(format!("{what}: {e}"))
+}
+
+/// 保存先（使う人が選んだフォルダ）への書き込みの失敗（版11）。io_error と違い、文字起こしの失敗の文（engine_failed）にしない。
+/// 書き込めない（許可が無い・読み取り専用）は not_writable、空き容量が無いときは disk_full、ほかは save_failed
+pub fn save_error(e: &std::io::Error, dir: &str) -> AppError {
+    let detail = format!("{dir}: {e}");
+    if e.raw_os_error() == Some(libc::ENOSPC) {
+        return AppError::disk_full(2_000_000_000).with_detail(detail);
+    }
+    if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(libc::EROFS) {
+        return AppError::not_writable().with_detail(detail);
+    }
+    AppError::save_failed().with_detail(detail)
 }
 
 #[cfg(test)]
@@ -121,9 +149,40 @@ mod tests {
             AppError::out_of_memory(),
             AppError::cancelled(true),
             AppError::not_same_recording(),
+            AppError::not_writable(),
+            AppError::save_failed(),
         ];
         for e in ours {
             assert_eq!(fixture[&e.code]["message"], e.message, "{}", e.code);
         }
+    }
+
+    /// 保存の失敗の分け方（版11）: 書き込めない・読み取り専用は not_writable、空き容量は disk_full、ほかは save_failed
+    #[test]
+    fn save_errors_are_classified() {
+        let code = |errno| save_error(&std::io::Error::from_raw_os_error(errno), "/保存先").code;
+        assert_eq!(code(libc::EACCES), "not_writable");
+        assert_eq!(code(libc::EPERM), "not_writable");
+        assert_eq!(code(libc::EROFS), "not_writable");
+        assert_eq!(code(libc::ENOSPC), "disk_full");
+        assert_eq!(code(libc::ENOENT), "save_failed");
+        assert!(save_error(&std::io::Error::from_raw_os_error(libc::EACCES), "/保存先").detail.unwrap_or_default().starts_with("/保存先: "));
+    }
+
+    /// 書き込めないフォルダに本当に保存したときに not_writable になる（保存と同じ関数で書く）
+    #[cfg(unix)]
+    #[test]
+    fn saving_into_a_read_only_folder_is_not_writable() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("kikiwake-not-writable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let dir = base.join("録音_文字起こし");
+        let files = vec![("transcript.md".to_string(), "本文\n".to_string())];
+        let err = kikiwake_core::lines::write_files(&dir, &files, false).unwrap_err();
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+        assert_eq!(save_error(&err, &dir.to_string_lossy()).code, "not_writable", "{err}");
     }
 }

@@ -1,91 +1,18 @@
-// 案A: 右の録音の上の段。情報（処理日・長さ・話者の数・場所）、元のファイルの帯、「話者」「文字起こし」の切り替えと操作。
+// 案A: 右の録音の上の段。情報（処理日・長さ・話者の数・場所）、元のファイルの帯、「話者」「文字起こし」の切り替えと「詳細」。
+// 「…」のメニューは 2026-09-29 に外した（中の操作はほかの場所に同じものがある。Finder で表示と削除は左の一覧の行の「…」へ移した）
 // 名前と状態の印は、その上の帯（Toolbar）に出す
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { HistoryItem } from "@contract/types";
 import { ErrorBand } from "../components/ErrorBand";
 import { useT } from "../i18n";
 import { basename, formatClock, formatMonthDay } from "../lib/format";
-import { requestCancel } from "../store/job";
 import { navigateStep } from "../store/naming";
-import { useApp, useIsMac } from "../store/state";
-import { MoreIcon } from "./icons";
+import { useApp } from "../store/state";
 import { namedOf, sourceOf, volumeOf, type Entry } from "./model";
 import { useLive } from "./selection";
-import {
-  deleteEntry,
-  dequeue,
-  dismissNotice,
-  openDetails,
-  relinkPick,
-  relinkSamePath,
-  retranscribe,
-  revealPath,
-  revealSavedFiles,
-  useObjects,
-} from "./store";
+import { dismissNotice, openDetails, relinkPick, relinkSamePath, retranscribe, useObjects } from "./store";
 
 export type Tab = "speakers" | "transcript";
-
-interface MenuItem {
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
-}
-
-function MoreMenu({ items }: { items: MenuItem[] }) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-  if (!items.length) return null;
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button
-        type="button"
-        className="objects-icon-btn"
-        title={t.objects.more}
-        aria-label={t.objects.more}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <MoreIcon />
-      </button>
-      {open ? (
-        <div className="objects-menu" role="menu">
-          {items.map((it) => (
-            <button
-              key={it.label}
-              type="button"
-              role="menuitem"
-              className={it.danger ? "danger" : undefined}
-              onClick={() => {
-                setOpen(false);
-                it.onClick();
-              }}
-            >
-              {it.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 /** 録音の上の注意の帯。狭い窓でも中身が隠れないよう、題と説明は1続きの文にして、ボタンと失敗の一言は下の段にまとめる */
 function Band({ title, body, error, children }: { title: string; body: ReactNode; error?: string | null; children?: ReactNode }) {
@@ -161,16 +88,13 @@ function SourceBand({ item, open, playable }: { item: HistoryItem; open: boolean
 export function RecordingHeader({ entry, tab }: { entry: Entry | null; tab: Tab | null }) {
   const t = useT();
   const o = t.objects;
-  const isMac = useIsMac();
   const job = useApp((s) => s.job);
-  const saved = useApp((s) => s.saved);
   const applying = useApp((s) => s.applying);
   const notice = useObjects((s) => s.notice);
   const openError = useObjects((s) => s.openError);
   const { live, playable } = useLive(entry);
 
   const open = Boolean(entry?.kind === "history" && job?.status === "done" && job.jobId === entry.item.jobId && playable !== null);
-  const viewingRunning = Boolean(entry?.kind === "running" && job?.status === "running");
 
   let meta: string[] = [];
   let path = job?.path ?? "";
@@ -189,21 +113,6 @@ export function RecordingHeader({ entry, tab }: { entry: Entry | null; tab: Tab 
   } else if (entry?.kind === "queued") {
     meta = [entry.item.durationSec > 0 ? formatClock(entry.item.durationSec) : ""];
     path = entry.item.path;
-  }
-
-  const items: MenuItem[] = [];
-  if (entry?.kind === "history") {
-    const it = entry.item;
-    const source = sourceOf(entry, open ? playable : null);
-    if (open && saved?.files.length) items.push({ label: o.menu.revealSaved(isMac), onClick: () => void revealSavedFiles() });
-    if (source === "ok") items.push({ label: o.menu.revealSource(isMac), onClick: () => void revealPath(it.path) });
-    if (open && source !== "ok") items.push({ label: o.menu.relink, onClick: () => void relinkPick() });
-    items.push({ label: o.menu.delete, onClick: () => deleteEntry(it), danger: true });
-  } else if (entry?.kind === "running" && viewingRunning) {
-    items.push({ label: o.menu.cancel, onClick: requestCancel, danger: true });
-  } else if (entry?.kind === "queued") {
-    const id = entry.item.id;
-    items.push({ label: o.menu.dequeue, onClick: () => dequeue(id) });
   }
 
   return (
@@ -262,7 +171,6 @@ export function RecordingHeader({ entry, tab }: { entry: Entry | null; tab: Tab 
               {t.result.details}
             </button>
           ) : null}
-          <MoreMenu items={items} />
         </div>
       </div>
     </div>

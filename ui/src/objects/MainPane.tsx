@@ -3,16 +3,19 @@
 import type { ReactNode } from "react";
 import { ErrorBand } from "../components/ErrorBand";
 import { useT } from "../i18n";
-import { basename, formatMonthDay } from "../lib/format";
+import { basename, dirname, formatMonthDay } from "../lib/format";
 import { FileScreen } from "../screens/FileScreen";
 import { NamingScreen } from "../screens/NamingScreen";
 import { ProcessingScreen } from "../screens/ProcessingScreen";
 import { ResultScreen } from "../screens/ResultScreen";
 import { DetailModal } from "../screens/result/DetailModal";
 import { SaveBar } from "../screens/result/SaveBar";
+import { SaveDialog } from "../screens/result/SaveDialog";
 import { useTranscriptModel } from "../screens/result/useTranscriptModel";
 import { SetupScreen } from "../screens/SetupScreen";
+import { closeSaveDialog, openSaveDialog } from "../store/result";
 import { getState, useApp } from "../store/state";
+import { samePath } from "./model";
 import { RecordingHeader, type Tab } from "./RecordingHeader";
 import { useCurrentEntry } from "./selection";
 import { dequeue, isRunning, resumeUnfinished, retryViewed, saveCurrent, startOrEnqueue, useObjects } from "./store";
@@ -25,9 +28,30 @@ function DetailHost() {
 }
 
 /**
+ * 「保存…」の窓（2026-09-29）。元のファイルと同じフォルダは、エンジンが返す既定の保存先（約束 版12）。
+ * 元のファイルのフォルダが無い（外付けを外した など）ときエンジンは書類フォルダを返すので、そのときは「元のファイルと同じ」とは書かない
+ */
+function SaveHost() {
+  const open = useApp((s) => s.dialog === "save");
+  const sourceDir = useApp((s) => s.job?.outDir ?? "");
+  const sourcePath = useApp((s) => s.job?.path ?? "");
+  if (!open) return null;
+  const sourceGone = Boolean(sourceDir && sourcePath) && !samePath(sourceDir, dirname(sourcePath));
+  return (
+    <SaveDialog
+      sourceDir={sourceDir}
+      sourceGone={sourceGone}
+      onCancel={closeSaveDialog}
+      onSave={(dir, formats) => void saveCurrent(dir, formats)}
+    />
+  );
+}
+
+/**
  * 録音の上の段と中身。中身には少なくとも 320px を残し、窓が低くて帯が並んだときは右側全体をスクロールする
  * （最小の窓 900×560 で、元のファイルの帯が出ても名前付け・本文が見えるように）。
- * 「話者」「文字起こし」のどちらでも、下は保存の帯だけ（2026-09-27 決定。名前を付けなくても保存できる）。下に貼り付けて、スクロールしても見える
+ * 「話者」「文字起こし」のどちらでも、下は保存の帯だけ（2026-09-27 決定。名前を付けなくても保存できる）。下に貼り付けて、スクロールしても見える。
+ * 帯は「保存…」だけで、形式と保存先は押して開く窓で選ぶ（2026-09-29）
  */
 function Recording({ tab, children }: { tab: Tab | null; children: ReactNode }) {
   const entry = useCurrentEntry();
@@ -43,10 +67,11 @@ function Recording({ tab, children }: { tab: Tab | null; children: ReactNode }) 
               <ErrorBand error={saveError} small />
             </div>
           ) : null}
-          <SaveBar onSave={() => void saveCurrent()} />
+          <SaveBar onOpen={openSaveDialog} />
         </div>
       ) : null}
       {tab ? <DetailHost /> : null}
+      {tab ? <SaveHost /> : null}
     </div>
   );
 }
@@ -82,7 +107,7 @@ function QueuedBody({ id }: { id: string }) {
       </p>
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button type="button" className="btn btn-secondary compact" onClick={() => dequeue(id)}>
-          {o.menu.dequeue}
+          {o.dequeue}
         </button>
       </div>
     </Page>

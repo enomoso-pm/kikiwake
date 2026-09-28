@@ -108,6 +108,76 @@
   color: var(--ink-3);
 }
 
+/* 行（録音1つ）。前に文字起こしした録音には右上に「…」（2026-09-29 の2回目。前はごみ箱。中は「Finder で表示」と「削除…」）。
+   選んでいる行・メニューを開いている行はいつも出し、ほかの行は指したとき・キーボードで選んだときだけ出す */
+.objects-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.objects-row-more {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.objects-row:hover .objects-row-more,
+.objects-row.selected .objects-row-more,
+.objects-row.menu-open .objects-row-more,
+.objects-row-more:focus-visible {
+  opacity: 1;
+}
+
+.objects-row-more:hover,
+.objects-row.menu-open .objects-row-more {
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--ink);
+}
+
+/* 「…」と名前が重ならないよう、名前の右を空けておく */
+.objects-row.has-menu .objects-item-title {
+  padding-right: 24px;
+}
+
+/* 行の「…」のメニュー（body に置き、ボタンの下か上に出す。一覧を重ねて出すときより上） */
+.objects-menu.objects-row-menu {
+  position: fixed;
+  right: auto;
+  z-index: 40;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.objects-menu button:disabled {
+  color: var(--ink-4);
+  cursor: default;
+}
+
+.objects-menu button:disabled:hover {
+  background: transparent;
+}
+
+/* 押せない項目の下の一言（「まだ保存していません」） */
+.objects-menu-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-4);
+}
+
 .objects-item {
   display: flex;
   flex-direction: column;

@@ -105,14 +105,21 @@ pub fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// 保存先の既定: 元ファイルの隣の「<名前>_文字起こし/」。英語の画面では「<名前>_transcript/」（約束 版7）
-pub fn default_out_dir(source: &Path, lang: Lang) -> PathBuf {
+/// 保存先の既定: 元ファイルと同じフォルダ（約束 版12。版11までは隣の「<名前>_文字起こし/」）。
+/// 画面は利用者が一度選んだ保存先を覚えていて、選んでいなければここに保存する（2026-09-29 決定）
+pub fn default_out_dir(source: &Path) -> PathBuf {
+    source.parent().unwrap_or(Path::new("/")).to_path_buf()
+}
+
+/// 保存するファイルの名前（拡張子なし）: 「<元ファイルの名前>_文字起こし」。英語の画面では「<名前>_transcript」（約束 版12。
+/// 名前を付けたかどうかでは変えない。版11までは Python 版と同じ transcript_named／transcript だった）
+pub fn saved_stem(source: &Path, lang: Lang) -> String {
     let stem = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let suffix = match lang {
         Lang::Ja => "文字起こし",
         Lang::En => "transcript",
     };
-    source.parent().unwrap_or(Path::new("/")).join(format!("{stem}_{suffix}"))
+    format!("{stem}_{suffix}")
 }
 
 /// ファイルシステムの空き（バイト）
@@ -297,7 +304,7 @@ impl Engine {
             src.duration_sec = old.duration_sec;
         }
         write_json(&job.file("source.json"), &src)?;
-        let out_dir = default_out_dir(Path::new(&src.path), self.locale()).display().to_string();
+        let out_dir = default_out_dir(Path::new(&src.path)).display().to_string();
         let cancel = Arc::new(Cancel::new());
         let ending = Arc::new(AtomicBool::new(false));
         let me = Arc::clone(self);
@@ -565,8 +572,8 @@ impl Engine {
         ctx.log(&format!("突き合わせ 話者 {}・確認用 {}・繰り返し {}", out.0, out.1, repeats.len()));
         let done = JobDone {
             job_id: ctx.job.id.clone(),
-            // 既定の保存先の名前は、処理が終わったときの画面の言語で（約束 版7）
-            out_dir: default_out_dir(&ctx.source, ctx.engine.locale()).display().to_string(),
+            // 既定の保存先は元ファイルと同じフォルダ（約束 版12）
+            out_dir: default_out_dir(&ctx.source).display().to_string(),
             speakers: out.0,
             unresolved_count: out.1,
             names: crate::results::names_of(&ctx.job),
@@ -985,11 +992,13 @@ mod tests {
     }
 
     #[test]
-    fn locale_names_the_default_folder_and_is_remembered() {
-        // 既定の保存先の名前は画面の言語で（約束 版7）
+    fn locale_names_the_saved_files_and_is_remembered() {
+        // 既定の保存先は元ファイルと同じフォルダ。保存するファイルの名前は録音の名前入りで、画面の言語で（約束 版12）
         let src = Path::new("/Users/example/定例 9月.m4a");
-        assert_eq!(default_out_dir(src, Lang::Ja), Path::new("/Users/example/定例 9月_文字起こし"));
-        assert_eq!(default_out_dir(src, Lang::En), Path::new("/Users/example/定例 9月_transcript"));
+        assert_eq!(default_out_dir(src), Path::new("/Users/example"));
+        assert_eq!(saved_stem(src, Lang::Ja), "定例 9月_文字起こし");
+        assert_eq!(saved_stem(src, Lang::En), "定例 9月_transcript");
+        assert_eq!(saved_stem(Path::new("/Users/example/ボイスメモ.2026.m4a"), Lang::Ja), "ボイスメモ.2026_文字起こし");
 
         let root = std::env::temp_dir().join(format!("kikiwake-locale-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);

@@ -3,7 +3,7 @@
 // 裏で処理している録音（見ていなくても進み具合を追う）・順番待ち・一覧の並び・一覧で選んだ途中の録音など。
 // 処理は同時に1本だけ（エンジンの作り）。処理中に足した録音は順番待ちにし、終わったら次を自動で始める（2026-09-27 決定）
 import { create } from "zustand";
-import type { AppError, HistoryItem, JobDone, JobFailed, JobProgress } from "@contract/types";
+import type { AppError, HistoryItem, JobDone, JobFailed, JobProgress, SaveFormat } from "@contract/types";
 import { api, mockDev } from "../api";
 import { getT } from "../i18n";
 import { toAppError } from "../lib/errors";
@@ -14,7 +14,7 @@ import { loadHistory, openHistoryItem, relinkSource } from "../store/history";
 import { progressPatch, setCloseInfo, startJob } from "../store/job";
 import { startNewRecording } from "../store/leave";
 import { applyNamesAndShow, needsApply } from "../store/naming";
-import { openDetail, save } from "../store/result";
+import { applySaveChoice, openDetail, save } from "../store/result";
 import { loadSetup } from "../store/setup";
 import { getState, setState, useApp, type JobView, type Screen } from "../store/state";
 import { goTo, showToast } from "../store/ui";
@@ -45,7 +45,7 @@ interface ObjectsState {
   collapsed: boolean;
   /** 録音の上に出す帯（保存したファイルが見つからない など） */
   notice: { kind: "savedMissing" | "error"; error: AppError } | null;
-  /** 一覧から消す前に確かめている録音 */
+  /** 削除する前に確かめている録音 */
   deleting: HistoryItem | null;
   /** 見ていない間に文字起こしが終わり、まだ開いていない録音（一覧の「●」。アプリを閉じても覚えておく） */
   fresh: string[];
@@ -339,7 +339,7 @@ export function retryViewed(): void {
 
 // ---- 録音に対する操作 ----------------------------------------------------------------------
 
-/** 「一覧から消す…」: 確かめてから消す（作業フォルダを丸ごと。元の録音と保存したファイルは消えない） */
+/** 一覧の行の「…」の「削除…」: 確かめてから削除する（作業フォルダを丸ごと。元の録音と保存したファイルは削除しない） */
 export function deleteEntry(item: HistoryItem): void {
   set({ deleting: item });
 }
@@ -368,10 +368,11 @@ export async function confirmDelete(): Promise<void> {
 }
 
 /**
- * 保存（「話者」「文字起こし」のどちらのタブの下からでも）。入れた名前がまだ確定していなければ、確定してから保存する。
- * 名前を付けていなければ「話者A」などのまま保存する（2026-09-27 決定）
+ * 保存（「話者」「文字起こし」のどちらのタブの下からでも）。「保存…」の窓で選んだ保存先と形式で（2026-09-29）、
+ * 入れた名前がまだ確定していなければ、確定してから保存する。名前を付けていなければ「話者A」などのまま保存する（2026-09-27 決定）
  */
-export async function saveCurrent(): Promise<void> {
+export async function saveCurrent(dir: string, formats: SaveFormat[]): Promise<void> {
+  applySaveChoice(dir, formats);
   if (needsApply(getState()) && !(await applyNamesAndShow(false))) return;
   await save();
 }
@@ -408,24 +409,31 @@ export async function retranscribe(path: string): Promise<void> {
   await inspectPath(path);
 }
 
-export async function revealPath(path: string): Promise<void> {
-  try {
-    await api.revealInFileManager(path);
-  } catch (e) {
-    set({ notice: { kind: "error", error: toAppError(e) } });
-  }
+function isOpen(item: HistoryItem): boolean {
+  const j = getState().job;
+  return j?.jobId === item.jobId && j.status === "done";
 }
 
-/** 保存したファイルを Finder で表示。見つからなければ（移した・消した）録音の上に帯を出す */
-export async function revealSavedFiles(): Promise<void> {
-  const s = getState();
-  const file = s.saved?.files[0];
+/** その録音で最後に保存したファイル（開いている録音は画面の値、ほかはエンジンの一覧の値。約束 版12）。保存していなければ空 */
+export function savedFilesOf(item: HistoryItem): string[] {
+  const live = isOpen(item) ? getState().lastSaved : [];
+  return live.length ? live : (item.savedFiles ?? []);
+}
+
+/**
+ * 一覧の行の「…」の「Finder で表示」（2026-09-29 決定: 保存の帯から一覧の行へ移した）。その録音で最後に保存したファイルを Finder で選んで見せる。
+ * 見つからなければ（移した・消した）その録音を開き、上に帯を出す（もう一度保存すると作り直せる）
+ */
+export async function revealSavedOf(entry: Extract<Entry, { kind: "history" }>): Promise<void> {
+  const file = savedFilesOf(entry.item)[0];
   if (!file) return;
   try {
     await api.revealInFileManager(file);
     if (get().notice?.kind === "savedMissing") set({ notice: null });
   } catch (e) {
-    set({ notice: { kind: "savedMissing", error: toAppError(e) } });
+    const error = toAppError(e);
+    if (!isOpen(entry.item)) await selectEntry(entry);
+    if (isOpen(entry.item)) set({ notice: { kind: "savedMissing", error } });
   }
 }
 

@@ -14,9 +14,10 @@
 #     real   手元の長い録音（KIKIWAKE_REAL_SAMPLE にパス。中身は出さず、時間と件数だけ）。REOPEN=1 で選び直しも
 #     history 履歴と閉じたときの状態（約束 版8・版9）。同じ作業フォルダで2回起動する: history1（1本目を保存して手直しし名前を入れかける・
 #            2本目を裏で終わらせて「●」・3本目の処理中に4本目を順番待ちにして閉じる）→ history2（一覧の並びと状態・「●」が残る・
-#            開き直すと手直しが戻る・元のファイルが見つからない／変わった・結び直す・一覧から消す・再開）
+#            開き直すと手直しが戻る・「保存…」の窓が前に選んだまま・保存したファイルが見つからない・元のファイルが見つからない／変わった・結び直す・
+#            行の「…」の「削除…」・再開）
 #     en     英語（約束 版7）: 英語の Mac のまね（-AppleLanguages (en-US)。この Mac の設定は変えない）で合成会議を通し、
-#            メニュー・画面・保存するファイル・既定の保存先の名前が英語か、日本語に切り替えると日本語になるか、英語がはみ出さないか
+#            メニュー・画面・保存するファイル（名前と中身）が英語か、日本語に切り替えると日本語になるか、英語がはみ出さないか
 #
 # 作業フォルダは ~/Library/Caches/Kikiwake-dev/phase2/e2e/<筋書き>/（毎回まっさらにする）。snap/*.json は見た目の記録（手順5-3）。
 # アプリのデータ（この Mac の速さの記録・覚えた画面の言語）も作業フォルダの中に分け、いつもの Kikiwake に混ぜない。
@@ -66,7 +67,7 @@ elif name == "en":
 elif name in ("history1", "history2"):
     fx = f"{root}/contract/fixtures"
     sc.update(recording=rec, recording2=rec.replace(".wav", "_2.wav"), recording3=rec.replace(".wav", "_3.wav"), recording4=rec.replace(".wav", "_4.wav"),
-              fixtures=fx, cacheDir=f"{work}/cache", timeoutMin=10, names=json.load(open(f"{fx}/names.json", encoding="utf-8")))
+              fixtures=fx, cacheDir=f"{work}/cache", saveDir=f"{work}/out", timeoutMin=10, names=json.load(open(f"{fx}/names.json", encoding="utf-8")))
 elif name == "real":
     sc.update(recording=rec, quiet=True, timeoutMin=45, reopen=os.environ.get("REOPEN") == "1")
     sc.pop("snapDir")
@@ -86,7 +87,7 @@ status=0
 for sc in "${@:-synth}"; do
   WORK="$DEV/phase2/e2e/$sc${FONTFIX:+-fontfix}"
   rm -rf "$WORK"
-  mkdir -p "$WORK/cache" "$WORK/snap" "$WORK/ref" "$WORK/rec"
+  mkdir -p "$WORK/cache" "$WORK/snap" "$WORK/ref" "$WORK/rec" "$WORK/out"
   # 新しい版の知らせ（約束 版10）: GitHub に尋ねる代わりに、この答えを読ませる（開発用のビルドだけ。ネットにつながない）。
   # synth・history は新しい版がある答え（帯と窓を確かめる）、ほかは古い版の答え（帯を出さない。説明書の写真にも写さない）
   printf '%s' '{"tag_name":"v9.9.9","name":"Kikiwake 9.9.9","body":"- （操作役）新しい版の知らせの確かめ","published_at":"2026-10-05T00:00:00Z"}' >"$WORK/update-newer.json"

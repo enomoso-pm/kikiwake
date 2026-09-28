@@ -46,5 +46,13 @@
  "not_same_recording": {
   "code": "not_same_recording",
   "message": "選んだファイルは、この録音と大きさか長さが違います。元の録音を選んでください。"
+ },
+ "not_writable": {
+  "code": "not_writable",
+  "message": "このフォルダには保存できません（書き込む許可がありません）。「保存…」の保存先で、別のフォルダを選んでください。"
+ },
+ "save_failed": {
+  "code": "save_failed",
+  "message": "保存できませんでした。保存先を確かめて、もう一度保存してください。続く場合は詳細をコピーして連絡してください。"
  }
 }

@@ -219,6 +219,10 @@ pub struct HistoryItem {
     /// 版9: 付けた名前（名前を確定していなければ省く）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub named_speakers: Option<NamedSpeakers>,
+    /// 版12: 最後に保存したファイル（閉じたときの状態の lastSavedFiles。無ければ savedFiles）。一度も保存していなければ省く。
+    /// 一覧の行の「…」の「Finder で表示」に使う
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_files: Option<Vec<String>>,
 }
 
 /// contract の HistoryOpened（openHistory・relinkSource の答え）: JobDone と同じ中身と、元ファイルがあるか

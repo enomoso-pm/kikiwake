@@ -108,15 +108,29 @@ pub(crate) fn ensure_audio(engine: &Engine, job: &JobDir) -> bool {
     }
 }
 
-/// 文字起こしをファイルに保存したことがあるか（版9）。閉じたときの状態の savedOnce（前の版の状態は savedFiles）で見る。
-/// 保存したことは書き起こしが変わっても変わらないので、書き起こしの指紋は見ない
+/// 閉じたときの状態の中身を、書き起こしの指紋を見ずに読む（保存したこと・保存したファイルは、書き起こしが変わっても変わらないため）
+fn raw_draft(job: &JobDir) -> Option<serde_json::Value> {
+    let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(job.file(DRAFT_FILE)).ok()?).ok()?;
+    v.get("draft").cloned()
+}
+
+/// 文字列の並び（空・文字でないものは無い扱い）
+fn strings_of(d: &serde_json::Value, key: &str) -> Option<Vec<String>> {
+    let list: Vec<String> = d.get(key)?.as_array()?.iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
+    (!list.is_empty()).then_some(list)
+}
+
+/// 文字起こしをファイルに保存したことがあるか（版9）。閉じたときの状態の savedOnce（前の版の状態は savedFiles）で見る
 fn saved_once(job: &JobDir) -> bool {
-    let Some(v) = fs::read_to_string(job.file(DRAFT_FILE)).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) else {
-        return false;
-    };
-    let Some(d) = v.get("draft") else { return false };
-    d.get("savedOnce").and_then(|b| b.as_bool()) == Some(true)
-        || d.get("savedFiles").and_then(|f| f.as_array()).is_some_and(|a| !a.is_empty())
+    let Some(d) = raw_draft(job) else { return false };
+    d.get("savedOnce").and_then(|b| b.as_bool()) == Some(true) || strings_of(&d, "savedFiles").is_some()
+}
+
+/// 最後に保存したファイル（版12）。閉じたときの状態の lastSavedFiles（保存したあとで名前を変えても残る）。
+/// 前の版の状態は savedFiles で見る。一度も保存していなければ None（一覧の行の「…」の「Finder で表示」に使う）
+fn last_saved_files(job: &JobDir) -> Option<Vec<String>> {
+    let d = raw_draft(job)?;
+    strings_of(&d, "lastSavedFiles").or_else(|| strings_of(&d, "savedFiles"))
 }
 
 /// 付けた名前（版9）。同じ名前を付けた話者は1人にまとめ、発言の多い順（保存するファイルの発言時間と同じ数え方）。
@@ -188,6 +202,7 @@ pub fn list_history(engine: &Engine) -> Vec<HistoryItem> {
             source_state: state,
             saved: done && saved_once(&job),
             named_speakers: named_speakers(&job),
+            saved_files: if done { last_saved_files(&job) } else { None },
         };
         items.push((last_touched(&job), item));
     }
@@ -195,14 +210,13 @@ pub fn list_history(engine: &Engine) -> Vec<HistoryItem> {
     items.into_iter().map(|(_, i)| i).collect()
 }
 
-/// 保存先の既定。元ファイルのあったフォルダが無ければ（外付けを外した・フォルダごと消した）書類フォルダに
-fn out_dir_for(engine: &Engine, source: &Path) -> PathBuf {
-    let dir = default_out_dir(source, engine.locale());
-    if dir.parent().is_some_and(Path::is_dir) {
+/// 保存先の既定（元ファイルと同じフォルダ。約束 版12）。そのフォルダが無ければ（外付けを外した・フォルダごと消した）書類フォルダに
+fn out_dir_for(source: &Path) -> PathBuf {
+    let dir = default_out_dir(source);
+    if dir.is_dir() {
         return dir;
     }
-    let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
-    home.join("Documents").join(dir.file_name().unwrap_or_default())
+    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join("Documents")
 }
 
 /// 履歴から書き終えた録音を開く（処理はしない。書き起こしはそのまま）。元ファイルがあれば、再生のために音声を取り出す
@@ -229,7 +243,7 @@ pub fn open_history(engine: &Engine, job_id: &str) -> Result<HistoryOpened, AppE
     Ok(HistoryOpened {
         done: JobDone {
             job_id: job_id.to_string(),
-            out_dir: out_dir_for(engine, Path::new(&src.path)).display().to_string(),
+            out_dir: out_dir_for(Path::new(&src.path)).display().to_string(),
             speakers: count_speakers(&job).unwrap_or(0),
             unresolved_count,
             names: names_of(&job),
@@ -553,7 +567,7 @@ mod tests {
         assert!(!o.source_available);
         assert_eq!((o.done.speakers, o.done.unresolved_count), (2, 1));
         assert_eq!(o.done.draft.as_ref(), Some(&draft));
-        assert!(o.done.out_dir.ends_with("Documents/定例_文字起こし"), "{}", o.done.out_dir);
+        assert!(o.done.out_dir.ends_with("/Documents"), "{}", o.done.out_dir);
         // 書き起こしが変わったら（行の id が合わないので）閉じたときの状態は使わない
         fs::write(jobs.join("aaaa/view_transcript.json"), r#"{"utterances":[{"id":"u0"}],"unresolved":[]}"#).unwrap();
         assert_eq!(open_history(&engine, "aaaa").unwrap().done.draft, None);
@@ -572,7 +586,7 @@ mod tests {
         let engine = Engine::new(paths.clone(), std::sync::Arc::new(NoEvents));
         // 元の録音と保存したファイル（作業フォルダの外）は消えない
         let rec = root.join("録音/定例.m4a");
-        let saved = root.join("録音/定例_文字起こし/transcript.md");
+        let saved = root.join("録音/定例_文字起こし.md");
         fs::create_dir_all(saved.parent().unwrap()).unwrap();
         fs::write(&rec, b"0123456789").unwrap();
         fs::write(&saved, b"# x").unwrap();
@@ -641,14 +655,20 @@ mod tests {
         let item = |engine: &Engine| list_history(engine).into_iter().find(|i| i.job_id == id).unwrap();
         let first = item(&engine);
         assert_eq!((first.source_state, first.source_available, first.saved), (SourceState::Ok, true, false));
-        assert_eq!(first.named_speakers, None);
+        assert_eq!((first.named_speakers, first.saved_files), (None, None));
         fs::write(dir.join("names.json"), r#"{"話者A":"松本","話者B":"田中","話者D":"松本"}"#).unwrap();
         assert_eq!(item(&engine).named_speakers, Some(NamedSpeakers { names: vec!["松本".into(), "田中".into()], unnamed: 1 }));
         // 保存したことがある（閉じたときの状態の savedOnce。前の版の状態は savedFiles で）
         save_draft(&engine, &id, &serde_json::json!({"screen": "result", "unsaved": true, "savedOnce": true})).unwrap();
         assert!(item(&engine).saved);
+        assert_eq!(item(&engine).saved_files, None);
         save_draft(&engine, &id, &serde_json::json!({"screen": "result", "unsaved": false, "savedFiles": ["/x/transcript_named.md"]})).unwrap();
         assert!(item(&engine).saved);
+        // 版12: 最後に保存したファイルは lastSavedFiles（保存したあとで名前を変えて savedFiles が空に戻っても残る）。前の版の状態は savedFiles
+        assert_eq!(item(&engine).saved_files, Some(vec!["/x/transcript_named.md".to_string()]));
+        let last = serde_json::json!({"screen": "result", "unsaved": true, "savedOnce": true, "savedFiles": [], "lastSavedFiles": ["/x/定例_文字起こし.md"]});
+        save_draft(&engine, &id, &last).unwrap();
+        assert_eq!(item(&engine).saved_files, Some(vec!["/x/定例_文字起こし.md".to_string()]));
         // 同じ場所にあるが中身（大きさか更新日時）が変わった → changed。無くなった → missing
         std::thread::sleep(std::time::Duration::from_millis(20));
         fs::write(&rec, b"9876543210").unwrap();

@@ -58,7 +58,26 @@ describe("閉じたときの状態（約束 版8）", () => {
 
   it("欠けた・古い形でも戻せる（無い所は初めの状態）", () => {
     const back = stateFromDraft({ screen: "naming", unsaved: false });
-    expect(back).toEqual({ lineNames: {}, confirmed: {}, textHistory: {}, hidden: {}, savedEdits: null, saved: null, savedOnce: false });
+    expect(back).toEqual({
+      lineNames: {},
+      confirmed: {},
+      textHistory: {},
+      hidden: {},
+      savedEdits: null,
+      saved: null,
+      savedOnce: false,
+      lastSaved: [],
+    });
+  });
+
+  it("版12: 最後に保存したファイルは、保存したあとで名前を変えても残る。前の版の状態は保存したファイルの記録で", () => {
+    const file = "/Users/example/定例_文字起こし.md";
+    setState({ ...resultInitial(), job: doneJob, screen: "result", saved: null, savedOnce: true, lastSaved: [file] });
+    const d = draftOf(getState(), true);
+    expect(d?.savedFiles).toEqual([]);
+    expect(d?.lastSavedFiles).toEqual([file]);
+    expect(stateFromDraft(JSON.parse(JSON.stringify(d))).lastSaved).toEqual([file]);
+    expect(stateFromDraft({ screen: "result", unsaved: false, savedFiles: ["/x/transcript.md"] }).lastSaved).toEqual(["/x/transcript.md"]);
   });
 
   it("版9: 保存したことがある（保存したあとで名前を変えて「保存しました」が消えても残る）。前の版の状態は保存したファイルの記録で", () => {

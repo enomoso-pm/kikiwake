@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { ja } from "../i18n/ja";
+import { parseSavePrefs } from "../store/savePrefs";
 import {
   basename,
   fileFormatLabel,
+  folderLabel,
   formatClock,
   formatCount,
   formatEstimate,
@@ -74,5 +77,27 @@ describe("そのほか", () => {
     expect(truncate(long)).toBe("あ".repeat(70) + "…");
     expect(truncate(truncate(long))).toBe(truncate(long));
     expect(truncate("短い")).toBe("短い");
+  });
+});
+
+describe("保存先（2026-09-29）", () => {
+  const home = ja.save.homeFolders;
+
+  it("フォルダの見せる名前は最後の部分。ホームの中のフォルダと共有は Finder の名前", () => {
+    expect(folderLabel("/Users/example/Movies", home)).toBe("ムービー");
+    expect(folderLabel("/Users/example/Documents/", home)).toBe("書類");
+    expect(folderLabel("/Users/Shared", home)).toBe("共有");
+    expect(folderLabel("/Users/example/Documents/議事録", home)).toBe("議事録");
+    // ホームの外・ホームより深い所の同じ名前はそのまま
+    expect(folderLabel("/Volumes/外付け/Movies", home)).toBe("Movies");
+    expect(folderLabel("/Users/example/Documents/Movies", home)).toBe("Movies");
+    expect(folderLabel("C:\\Users\\example\\Documents", home)).toBe("Documents");
+  });
+
+  it("覚えた形式と保存先: 壊れた値・知らない形式は捨て、形式が無ければ .md。前に選んだフォルダは保存先から補う", () => {
+    expect(parseSavePrefs(null)).toEqual({ formats: ["md"], dir: null, recent: null });
+    expect(parseSavePrefs({ formats: ["json", "pdf", "md"], dir: "/a", recent: null })).toEqual({ formats: ["md", "json"], dir: "/a", recent: "/a" });
+    expect(parseSavePrefs({ formats: [], dir: "", recent: "/b" })).toEqual({ formats: ["md"], dir: null, recent: "/b" });
+    expect(parseSavePrefs("壊れた")).toEqual({ formats: ["md"], dir: null, recent: null });
   });
 });

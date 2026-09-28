@@ -3,6 +3,7 @@ import type { SaveFormat } from "@contract/types";
 import { api } from "../api";
 import { getT } from "../i18n";
 import { toAppError } from "../lib/errors";
+import { basename } from "../lib/format";
 import { cleanName, nameKey } from "../lib/names";
 import { buildEdits, buildRows, menuNames, normalizeEditedText } from "../lib/transcript";
 import { NO_NAME, getState, setState, type AppState } from "./state";
@@ -226,19 +227,27 @@ export function closeDetail(): void {
   setState({ detailOpen: false });
 }
 
-// ---- 保存（§8.9。ファイル名は Python 版と同じ。同じ名前があればいつも確かめる） ------------------------
+// ---- 保存（§8.9。同じ名前があればいつも確かめる） -----------------------------------------------------
+// 2026-09-29 決定: 保存の帯は「保存…」だけ。形式と保存先は「保存…」の窓で選び（screens/result/SaveDialog）、次からも同じにする（store/savePrefs）。
+// ファイルの名前は録音の名前入り（約束 版12。「定例会議_0926_文字起こし.md」）
 
-export function toggleFormat(f: SaveFormat): void {
-  setState((s) => ({ formats: { ...s.formats, [f]: !s.formats[f] }, saved: null }));
+/** 「保存…」の窓を開く */
+export function openSaveDialog(): void {
+  if (getState().saving) return;
+  setState({ dialog: "save", saveError: null });
 }
 
-export async function changeOutDir(): Promise<void> {
-  try {
-    const dir = await api.pickFolder(getState().outDir || undefined);
-    if (dir) setState({ outDir: dir, saved: null });
-  } catch (e) {
-    setState({ saveError: toAppError(e) });
-  }
+export function closeSaveDialog(): void {
+  setState((s) => (s.dialog === "save" ? { dialog: null } : {}));
+}
+
+/** 窓で選んだ形式と保存先を、この録音の保存に使う（保存は store の save。名前の確定を挟むので呼ぶ側で） */
+export function applySaveChoice(dir: string, formats: readonly SaveFormat[]): void {
+  setState({
+    dialog: null,
+    outDir: dir,
+    formats: { md: formats.includes("md"), txt: formats.includes("txt"), json: formats.includes("json") },
+  });
 }
 
 export async function save(overwrite = false): Promise<void> {
@@ -258,7 +267,10 @@ export async function save(overwrite = false): Promise<void> {
       setState({ saving: false, overwrite: res.existing, dialog: "overwrite" });
       return;
     }
-    setState({ saving: false, saved: { files: res.files }, savedOnce: true, savedEdits: editsSignature(s) });
+    setState({ saving: false, saved: { files: res.files }, lastSaved: res.files, savedOnce: true, savedEdits: editsSignature(s) });
+    // 保存の帯に「保存しました」を出すのはやめた（2026-09-29）。保存したことは状態の印、ファイルの名前はこの知らせで
+    const [first, ...more] = res.files;
+    if (first) showToast(getT().save.savedToast(basename(first), more.length));
   } catch (e) {
     setState({ saving: false, saveError: toAppError(e) });
   }
@@ -266,13 +278,4 @@ export async function save(overwrite = false): Promise<void> {
 
 export function cancelOverwrite(): void {
   setState({ dialog: null, overwrite: null });
-}
-
-export async function revealSaved(): Promise<void> {
-  const s = getState();
-  try {
-    await api.revealInFileManager(s.saved?.files[0] ?? s.outDir);
-  } catch (e) {
-    setState({ saveError: toAppError(e) });
-  }
 }

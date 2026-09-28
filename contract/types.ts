@@ -1,6 +1,6 @@
 // Kikiwake 画面 ⇄ エンジンの受け渡しの約束（データの形）。ここが正。
 // 変更したら contract/README.md の履歴に書く。
-// 版 10（2026-09-27）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
+// 版 12（2026-09-29）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
 // 書き起こしは正確さ優先（Whisper large-v3）だけ。版1にあった品質の選択（速さ優先）は無くした。
 
 /**
@@ -100,7 +100,8 @@ export interface FileDragOver {
 export interface JobStarted {
   jobId: string;
   /**
-   * 保存先の既定。元ファイルの隣の「<名前>_文字起こし/」（英語の画面では「<名前>_transcript/」。版7）。
+   * 保存先の既定。版12: 元ファイルと同じフォルダ（元ファイルのあったフォルダが無ければ書類フォルダ）。版11までは元ファイルの隣の「<名前>_文字起こし/」。
+   * 画面は利用者が一度選んだ保存先を覚えていて、選んでいなければここに保存する（2026-09-29 決定）。
    * 作業用のファイル（音声・話者判定・書き起こし・names.json など）は作業フォルダ（そのまま履歴。版8）に置き、ここには保存したファイルだけを書く
    */
   outDir: string;
@@ -276,9 +277,11 @@ export interface LineEdits {
 export type SaveFormat = "md" | "txt" | "json";
 
 /**
- * 保存するファイルの名前は Python 版と同じ: 名前が1つでも使われていれば transcript_named.<形式>、無ければ transcript.<形式>。
- * .md は Python 版と同じ書式、.json は transcript.json と同じ形、.txt は本文の行（「[00:12] 佐藤: …」）だけで、確認用は末尾。
- * 版7: 中の言葉は setLocale で知らせた画面の言語。英語なら見出し・確認用の欄を英語に、「話者A」「不明」を「Speaker A」「Unknown」に（ファイル名は同じ）
+ * 保存するファイルの名前は、版12から録音の名前入り: 「<元ファイルの名前（拡張子なし）>_文字起こし.<形式>」（英語の画面では「_transcript」）。
+ * 名前を付けたかどうかで変えない（付けたあとで保存し直すと同じ名前になり、上書きを確かめる）。dir にそのまま書く（フォルダは作らない）。
+ * 版11までは Python 版と同じ transcript_named.<形式>／transcript.<形式>（2026-09-29 に「録音の名前を入れる」に変えた）。
+ * 中身は今までどおり: .md は Python 版と同じ書式、.json は transcript.json と同じ形、.txt は本文の行（「[00:12] 佐藤: …」）だけで、確認用は末尾。
+ * 版7: 中の言葉は setLocale で知らせた画面の言語。英語なら見出し・確認用の欄を英語に、「話者A」「不明」を「Speaker A」「Unknown」に
  */
 export interface SaveRequest {
   dir: string;
@@ -348,6 +351,11 @@ export interface HistoryItem {
   saved: boolean;
   /** 版9で追加。付けた名前。名前を確定していなければ省略 */
   namedSpeakers?: NamedSpeakers;
+  /**
+   * 版12で追加。最後に保存したファイル（閉じたときの状態の lastSavedFiles。無ければ savedFiles）。保存したあとで手直ししても残す。
+   * 一度も保存していなければ省略。一覧の行の「…」の「Finder で表示」に使う（2026-09-29 決定: 保存の帯から「Finder で表示」を外し、一覧の行へ）
+   */
+  savedFiles?: string[];
 }
 
 /** 版8で追加。履歴から開いた録音（openHistory・relinkSource）。JobDone と同じ中身に、元ファイルがあるかを足したもの */
@@ -383,6 +391,11 @@ export interface JobDraft {
    * 履歴の一覧の saved（状態の印「保存前」「保存済み」「保存後に手直し」）に使う
    */
   savedOnce?: boolean;
+  /**
+   * 版12で追加。最後に保存したファイル（保存したあとで名前を変えると savedFiles は空に戻るが、これは次に保存するまで残す）。
+   * エンジンは HistoryItem.savedFiles に入れて返す
+   */
+  lastSavedFiles?: string[];
 }
 
 // ---- 新しい版の知らせ（版10） -------------------------------------------------------------
@@ -420,7 +433,9 @@ export type ErrorCode =
   | "engine_failed"
   | "out_of_memory"
   | "cancelled"
-  | "not_same_recording"; // 版8: 履歴の「ファイルを選び直す」で、大きさか長さが元の録音と違う
+  | "not_same_recording" // 版8: 履歴の「ファイルを選び直す」で、大きさか長さが元の録音と違う
+  | "not_writable" // 版11: 保存先のフォルダに書き込めない（書き込む許可が無い・読み取り専用のディスク）
+  | "save_failed"; // 版11: そのほかの理由で保存できない（空き容量が無いときは disk_full）
 
 export interface AppError {
   code: ErrorCode;

@@ -3,14 +3,16 @@
 // 画面は録音が主役の形（左に録音の一覧・右に選んだ録音。2026-09-27 に製品の画面にした）。
 //   setup  準備の画面だけ（一覧は出さない）: 足りないモデルを取る（途中で中断して続きから）→「はじめる」で新しい録音の画面・一覧 →「AI モデルと動作条件」で見返す
 //   synth  合成会議で通す: ドロップ → 処理中の閉じる確かめ（段階の文）・中止と再開 → 処理中に2本目を順番待ち（閉じる確かめに順番待ちの一文）→
-//          1本目が終わると2本目がすぐ始まる（見ていない処理中の録音でも閉じる確かめ）→ 話者のタブ（サンプルの再生・名前・保存の帯から保存）→
-//          文字起こしのタブ（行の再生・「詳細」・手直し・上書きの確かめ・見本や画面を通さずに保存したものと比べる）→ 処理中にほかの録音を開き直す
+//          1本目が終わると2本目がすぐ始まる（見ていない処理中の録音でも閉じる確かめ）→ 話者のタブ（サンプルの再生・名前・「保存…」の窓から保存）→
+//          文字起こしのタブ（行の再生・「詳細」・手直し・上書きの確かめ・見本や画面を通さずに保存したものと比べる）→ 一覧の行の「…」→ 処理中にほかの録音を開き直す
 //          （処理は最後まで進む）→ 見ていない間に終わった録音の「●」→ 同じ録音を選び直す → ドラッグ中の案内・窓の幅・はみ出し
 //   photo  説明書の写真（新しい録音でファイルを選んだ・話者のタブ・文字起こしのタブ）
 //   real   実録音（quiet: 中身は出さず、時間と件数だけ）
-//   history1・history2  履歴と閉じたときの状態（約束 版8・版9）。scripts/e2e_mac.sh が同じ作業フォルダで2回起動する
-//   en     英語（約束 版7）: 英語の Mac のまねで起動 → メニュー・画面・保存が英語、既定の保存先が「_transcript」→ 日本語に切り替えるとメニューと保存も日本語に。
+//   history1・history2  履歴と閉じたときの状態（約束 版8・版9・版12）。scripts/e2e_mac.sh が同じ作業フォルダで2回起動する
+//   en     英語（約束 版7）: 英語の Mac のまねで起動 → メニュー・画面・保存が英語、保存するファイルが「_transcript」→ 日本語に切り替えるとメニューと保存も日本語に。
 //          英語がはみ出さないか（1200×800・900×560）
+// 保存（2026-09-29 決定・約束 版12）: 保存の帯は「保存…」だけで、押すと窓で形式と保存先を選ぶ（覚えて次からも同じ）。ファイルは録音の名前入り
+// 「<元の名前>_文字起こし.<形式>」を、選んだフォルダ（既定は元のファイルと同じフォルダ）にそのまま書く。Finder で表示と削除は一覧の行の「…」から
 (() => {
   if (window.top !== window || window.__kkE2E) return;
   window.__kkE2E = true;
@@ -96,7 +98,14 @@
     speakers: "話者",
     transcript: "文字起こし",
     stopped: "中断しました",
+    /** 保存の帯のボタン（押すと窓）と、窓の中の「保存」（2026-09-29） */
+    saveOpen: "保存…",
     save: "保存",
+    saving: "保存中…",
+    overwriteTitle: "同じ名前のファイルがあります",
+    overwrite: "上書きする",
+    /** 保存するファイルの名前の後ろ（約束 版12） */
+    suffix: "文字起こし",
   };
   const EN = {
     newTitle: "New recording",
@@ -105,8 +114,18 @@
     speakers: "Speakers",
     transcript: "Transcript",
     stopped: "Stopped",
+    saveOpen: "Save…",
     save: "Save",
+    saving: "Saving…",
+    overwriteTitle: "Files with the same name exist",
+    overwrite: "Replace",
+    suffix: "transcript",
   };
+
+  /** 保存するファイルの名前（拡張子なし。約束 版12）: 「<元の名前>_文字起こし」 */
+  const savedStem = (recording, L = JA) => `${recording.split("/").pop().replace(/\.[^.]+$/, "")}_${L.suffix}`;
+  /** 元のファイルと同じフォルダ（保存先の既定。約束 版12） */
+  const folderOf = (path) => path.replace(/\/[^/]+$/, "");
 
   /** 処理中に閉じるときの確かめの文（2026-09-27 決定。ui/src/i18n/ja.ts の dialog.closeBody と同じ） */
   const CLOSE_TITLE = "文字起こし中です。閉じますか？";
@@ -156,13 +175,85 @@
     if (!ok) throw new Error(`「${name}」のタブにならない（今は「${tab()}」）`);
   }
 
-  /** 録音の上の段の「…」のメニューの項目 */
-  async function moreMenu() {
-    document.querySelector('.objects-head .objects-icon-btn[aria-haspopup="menu"]')?.click();
-    const menu = await waitFor(() => document.querySelector(".objects-menu"), 2000);
-    return menu ? [...menu.querySelectorAll("button")] : [];
-  }
+  /** 左の一覧の行の「…」（2026-09-29 の2回目。前はごみ箱。中は「Finder で表示」と「削除…」） */
+  const moreButton = (entryEl) => entryEl?.closest(".objects-row")?.querySelector(".objects-row-more") ?? null;
   const escape = () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  /** 行の「…」を開いて、中の項目のボタンを返す（開けなければ null）。閉じるのは escape() */
+  async function openRowMenu(entryEl) {
+    await showList();
+    const b = moreButton(entryEl);
+    if (!b) return null;
+    // マウスで押したのと同じに（detail 1。キーボードで開くと最初の項目に移る）
+    b.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    const m = await waitFor(() => document.querySelector(".objects-row-menu"), 2000);
+    return m ? [...m.querySelectorAll("button")] : null;
+  }
+  /** メニューの項目の文（押せない項目の下の一言を除く）と、押せるか */
+  const menuItemsText = (items) => (items || []).map((b) => `${norm(b.firstChild?.textContent)}${b.disabled ? "（押せない）" : ""}`).join("|");
+
+  /** 保存の帯（「保存…」のボタンの入った帯） */
+  const saveBar = () => (button(JA.saveOpen) || button(EN.saveOpen))?.parentElement ?? null;
+  const saveDialog = () => document.querySelector(".save-dialog");
+  /** 窓の形式の欄: ["md", true] のような並び */
+  const dialogFormats = (dlg) =>
+    [...dlg.querySelectorAll(".save-format")].map((b) => [norm(b.querySelector(".save-format-ext")?.textContent).replace(/^\./, ""), b.getAttribute("aria-checked") === "true"]);
+  /** 窓の保存先の欄（選んでいる値と、選択肢の文） */
+  const dialogFolder = (dlg) => {
+    const sel = dlg.querySelector("select");
+    return { value: sel?.value, options: [...(sel?.options ?? [])].map((o) => o.text), selected: sel?.selectedOptions?.[0]?.text };
+  };
+  /** 保存の知らせ（2026-09-29: 「「…」を保存しました」「「…」ほか2件を保存しました」／英語「Saved “…”」「Saved “…” and 2 more」）から、保存した数 */
+  function savedCount(text) {
+    let m = text.match(/^「.+」ほか(\d+)件を保存しました$/) || text.match(/^Saved “.+” and (\d+) more$/);
+    if (m) return 1 + Number(m[1]);
+    return /^「.+」を保存しました$/.test(text) || /^Saved “.+”$/.test(text) ? 1 : 0;
+  }
+  /** 「保存…」→ 窓を開いて返す */
+  async function openSaveDialog(L = JA) {
+    await clickWhen(L.saveOpen);
+    return waitFor(saveDialog, 3000);
+  }
+  /** 窓の形式を formats のとおりにする（["md","txt"] など） */
+  async function chooseFormats(dlg, formats) {
+    for (const b of dlg.querySelectorAll(".save-format")) {
+      const f = norm(b.querySelector(".save-format-ext")?.textContent).replace(/^\./, "");
+      if ((b.getAttribute("aria-checked") === "true") !== formats.includes(f)) b.click();
+    }
+    await sleep(50);
+  }
+  /** 窓の保存先を選ぶ（"source"＝元のファイルと同じフォルダ・"recent"＝前に選んだフォルダ）。React が読む値を変える */
+  async function chooseFolder(dlg, value) {
+    const sel = dlg.querySelector("select");
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(sel, value);
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(50);
+  }
+  /** 最後に読んだ保存の知らせ */
+  let lastSaveToast = "";
+  /** 窓の「保存」を押す → 保存した（知らせが新しく出る）か、同じ名前のファイルの確かめ */
+  async function confirmSave(dlg, L = JA) {
+    const before = document.querySelector(".toast");
+    [...dlg.querySelectorAll("button")].find((b) => norm(b.textContent) === L.save)?.click();
+    return waitForSaved(L, before);
+  }
+  /** 保存が終わるまで待つ（前の知らせ before とは別の、保存の知らせが出たら "saved"） */
+  function waitForSaved(L, before = document.querySelector(".toast")) {
+    return waitFor(() => {
+      if (dialogTitle() === L.overwriteTitle) return "dialog";
+      const el = document.querySelector(".toast");
+      if (el && el !== before && savedCount(norm(el.textContent)) && !button(L.saving)) {
+        lastSaveToast = norm(el.textContent);
+        return "saved";
+      }
+      return null;
+    }, 15000, 50);
+  }
+  /** 同じ名前のファイルの確かめで「上書きする」→ 保存した */
+  async function overwriteAndWait(L = JA) {
+    const before = document.querySelector(".toast");
+    await clickWhen(L.overwrite);
+    return waitForSaved(L, before);
+  }
 
   /** React の入力欄に値を入れる（見た目の値ではなく、React が読む値を変える） */
   function setValue(el, value) {
@@ -323,15 +414,12 @@
     return { sec: (Date.now() - t0) / 1000, pcts: pcts.size };
   }
 
-  /** 保存の帯の「保存」→ 保存した か 同じ名前のファイルの確かめ */
-  async function saveAndWait(L = JA) {
-    const before = norm(bodyText().match(/保存しました（\d+件）|Saved \(\d+ files?\)/)?.[0]);
-    await clickWhen(L.save);
-    return waitFor(() => {
-      if (dialogTitle() === "同じ名前のファイルがあります") return "dialog";
-      const now = norm(bodyText().match(/保存しました（\d+件）|Saved \(\d+ files?\)/)?.[0]);
-      return now && (now !== before || !document.querySelector(".objects-tab[disabled]")) && !button("保存中…") ? "saved" : null;
-    }, 15000);
+  /** 「保存…」→ 窓（formats があれば形式をそのとおりに）→「保存」→ "saved"（保存した）か "dialog"（同じ名前のファイルの確かめ） */
+  async function saveAndWait(L = JA, formats = null) {
+    const dlg = await openSaveDialog(L);
+    if (!dlg) return null;
+    if (formats) await chooseFormats(dlg, formats);
+    return confirmSave(dlg, L);
   }
 
   // ---- 準備の画面 ------------------------------------------------------------------------
@@ -450,7 +538,8 @@
     const name1 = sc.recording.split("/").pop();
     const name2 = sc.recording2.split("/").pop();
     await screen(L.newTitle, 30000);
-    check("起動して新しい録音の画面（一覧はまだ空）", bodyText().includes("まだありません"));
+    // 一覧は起動のあとで読み込む（空の一言は読み込めてから出る）ので、少し待つ
+    check("起動して新しい録音の画面（一覧はまだ空）", await waitFor(() => bodyText().includes("まだありません"), 3000));
     const m0 = await menuIs(MENU_JA);
     check("Mac のメニューが日本語（版7）", m0.ok && m0.menu[0]?.items?.[0] === "Kikiwake について", m0.menu.map((x) => x.title).join(" "));
     check("窓が広い（1100px 以上）と一覧を横に置く", document.querySelector(".objects-sidebar:not(.overlay)"), `窓の幅 ${innerWidth}px`);
@@ -519,22 +608,49 @@
     // 話者のタブ
     await snap(sc, "naming");
     await namingChecks(sc);
-    check("保存の帯（話者のタブ）に「保存先を変える」", button("保存先を変える"));
+    // 保存の帯は「保存…」だけ（2026-09-29 決定: 形式・保存先・「保存しました」・「Finder で表示」は帯に出さない）
+    const bar = saveBar();
+    check(
+      "保存の帯は「保存…」だけ（形式・保存先・Finder で表示は出さない）",
+      bar && [...bar.querySelectorAll("button")].map((b) => norm(b.textContent)).join("|") === "保存…" && !bar.querySelector(".check-chip") && !button("Finder で表示"),
+      bar ? norm(bar.textContent) : "無い",
+    );
     await detailCheck("話者のタブ（名前を確定してから）", null);
     // 話者のタブから .md・.txt を保存（名前を確定してから保存する）→ 見本（Python 版と同じ中身）と比べる
-    await clickWhen(".txt");
-    const s1 = await saveAndWait();
-    check("話者のタブから保存すると、名前を確定して保存（2件）", s1 === "saved" && tab() === "話者" && bodyText().includes("保存しました（2件）"), norm(bodyText().match(/保存しました[^\n]*/)?.[0]));
-    const out = lastDone && lastDone.jobId === job1 ? lastDone.outDir : `${sc.recording.replace(/\.wav$/, "")}_文字起こし`;
+    const dlg1 = await openSaveDialog(L);
+    const f1 = dlg1 ? dialogFolder(dlg1) : {};
+    check(
+      "「保存…」で窓: 初めは .md だけ・保存先は元のファイルと同じフォルダ",
+      dlg1 && JSON.stringify(dialogFormats(dlg1)) === JSON.stringify([["md", true], ["txt", false], ["json", false]]) && f1.value === "source" && f1.selected === `元のファイルと同じフォルダ（${folderOf(sc.recording).split("/").pop()}）`,
+      dlg1 ? `${JSON.stringify(dialogFormats(dlg1))}・${f1.selected}` : "窓が出ない",
+    );
+    await snap(sc, "save-dialog");
+    let s1 = null;
+    if (dlg1) {
+      await chooseFormats(dlg1, ["md", "txt"]);
+      s1 = await confirmSave(dlg1, L);
+    }
+    check("話者のタブから保存すると、名前を確定して保存（2件・ファイルの名前の知らせ）", s1 === "saved" && tab() === "話者" && savedCount(lastSaveToast) === 2, lastSaveToast);
+    const out = lastDone && lastDone.jobId === job1 ? lastDone.outDir : folderOf(sc.recording);
+    check("保存先の既定は元のファイルと同じフォルダ（約束 版12）", out === folderOf(sc.recording), out);
+    const stem = savedStem(sc.recording);
+    check("保存の知らせにファイルの名前（録音の名前入り）", lastSaveToast === `「${stem}.md」ほか1件を保存しました`, lastSaveToast);
     const fx = sc.fixtures;
-    await compareFile("保存した .md が見本と同じ（題・元ファイル・処理日を除く）", `${out}/transcript_named.md`, await invoke("dev_read", { path: `${fx}/saved_files/transcript_named.md` }), normalizeMd);
-    await compareFile("保存した .txt が見本と同じ", `${out}/transcript_named.txt`, await invoke("dev_read", { path: `${fx}/saved_files/transcript_named.txt` }));
+    await compareFile("保存した .md が見本と同じ（題・元ファイル・処理日を除く）", `${out}/${stem}.md`, await invoke("dev_read", { path: `${fx}/saved_files/transcript_named.md` }), normalizeMd);
+    await compareFile("保存した .txt が見本と同じ", `${out}/${stem}.txt`, await invoke("dev_read", { path: `${fx}/saved_files/transcript_named.txt` }));
     check("保存すると印が「保存済み」", headChip() === "保存済み" && (await waitFor(() => chipOf(entryOf(name1)) === "保存済み", 3000)), headChip());
     check("名前を付けた録音の行に「松本・田中ほか2人」（約束 版9）", await waitFor(() => entryText(entryOf(name1)).includes("松本・田中ほか2人"), 3000), entryText(entryOf(name1)));
+    let prefs = null;
+    try {
+      prefs = JSON.parse(localStorage.getItem("kikiwake.save") || "null");
+    } catch {
+      prefs = null;
+    }
+    check("選んだ形式と保存先を覚える（.md・.txt／元のファイルと同じフォルダ）", prefs && prefs.formats.join(",") === "md,txt" && prefs.dir === null, JSON.stringify(prefs));
 
-    // 文字起こしのタブ（名前が同じなら「保存しました」は消えない）
+    // 文字起こしのタブ（名前が同じなら「保存済み」のまま）
     await toTab(L.transcript);
-    check("話者→文字起こしで「保存しました」と「保存済み」が消えない", bodyText().includes("保存しました（2件）") && headChip() === "保存済み", headChip());
+    check("話者→文字起こしで「保存済み」が消えない", headChip() === "保存済み", headChip());
     const view = await transcriptChecks(sc, job1, true);
     await snap(sc, "result");
     await detailCheck("文字起こしのタブ", view);
@@ -560,13 +676,23 @@
     }
     check("保存したあとで手直しすると「保存後に手直し」（上の帯と一覧）", headChip() === "保存後に手直し" && (await waitFor(() => chipOf(entryOf(name1)) === "保存後に手直し", 3000)), headChip());
 
-    // .json も足して保存 → 同じ名前のファイルがあるので確かめる →「上書きする」
-    await clickWhen(".json");
-    const s2 = await saveAndWait();
-    check("同じ名前のファイルがあると確かめる", s2 === "dialog");
+    // もう一度「保存…」→ 窓は前に選んだ .md・.txt のまま（覚えている）→ .json も足して保存 → 同じ名前のファイルがあるので確かめる →「上書きする」
+    const dlg2 = await openSaveDialog(L);
+    check(
+      "窓を開き直すと、前に選んだ形式（.md・.txt）のまま",
+      dlg2 && JSON.stringify(dialogFormats(dlg2)) === JSON.stringify([["md", true], ["txt", true], ["json", false]]),
+      dlg2 ? JSON.stringify(dialogFormats(dlg2)) : "窓が出ない",
+    );
+    let s2 = null;
+    if (dlg2) {
+      await chooseFormats(dlg2, ["md", "txt", "json"]);
+      s2 = await confirmSave(dlg2, L);
+    }
+    const owBody = norm(document.querySelector(".dialog-body")?.textContent);
+    check("同じ名前のファイルがあると確かめる（録音の名前入りのファイル）", s2 === "dialog" && owBody.includes(`${stem}.md`), owBody.slice(0, 160));
     if (s2 === "dialog") {
-      await clickWhen("上書きする");
-      check("上書きして保存（3件）→「保存済み」", await waitFor(() => bodyText().includes("保存しました（3件）") && headChip() === "保存済み", 15000), headChip());
+      const over = await overwriteAndWait(L);
+      check("上書きして保存（3件）→「保存済み」", over === "saved" && savedCount(lastSaveToast) === 3 && (await waitFor(() => headChip() === "保存済み", 3000)), `${lastSaveToast}・${headChip()}`);
     }
     // 画面を通さずに、同じ手直しをエンジンで保存したもの（約束の saveOutputs）と一字一句比べる
     const ref = await invoke("save_outputs", { jobId: job1, req: { dir: sc.refDir, formats: ["md", "txt", "json"], edits, overwrite: true } });
@@ -578,14 +704,31 @@
     // 手直しで発言時間を数え直す見出しの「長さ・話者」の行は、秒の繰り上がりが見本と分かれることがある（田中 41.99 秒と 42.00 秒）。その行は参考に出す
     const editedMd = await invoke("dev_read", { path: `${fx}/saved_files/edited/transcript_named.md` });
     const talkLine = (md) => md.match(/^- 長さ: .*$/m)?.[0] ?? "";
-    await compareFile("手直しを当てた .md の本文が見本と同じ（見出しの題・元ファイル・処理日・発言時間を除く）", `${out}/transcript_named.md`, editedMd, (md) => normalizeMd(md).replace(/^- 長さ: .*$/m, "- 長さ: *"));
-    const gotTalk = talkLine(await invoke("dev_read", { path: `${out}/transcript_named.md` }));
+    await compareFile("手直しを当てた .md の本文が見本と同じ（見出しの題・元ファイル・処理日・発言時間を除く）", `${out}/${stem}.md`, editedMd, (md) => normalizeMd(md).replace(/^- 長さ: .*$/m, "- 長さ: *"));
+    const gotTalk = talkLine(await invoke("dev_read", { path: `${out}/${stem}.md` }));
     info(`発言時間の行: ${gotTalk === talkLine(editedMd) ? "見本と同じ" : `アプリ「${gotTalk.slice(4, 80)}」／見本「${talkLine(editedMd).slice(4, 80)}」`}`);
-    await compareFile("手直しを当てた .json が見本と同じ", `${out}/transcript_named.json`, await invoke("dev_read", { path: `${fx}/saved_files/edited/transcript_named.json` }));
-    // 「…」のメニュー
-    const items = (await moreMenu()).map((b) => norm(b.textContent));
-    check("「…」に Finder で表示（保存したファイル・元のファイル）と「一覧から消す…」", ["保存したファイルを Finder で表示", "元のファイルを Finder で表示", "一覧から消す…"].every((x) => items.includes(x)), items.join(" / "));
+    await compareFile("手直しを当てた .json が見本と同じ", `${out}/${stem}.json`, await invoke("dev_read", { path: `${fx}/saved_files/edited/transcript_named.json` }));
+    // 上の段の「…」のメニューは外した（2026-09-29）。一覧の行に「…」（選んでいる行はいつも出す）。中は「Finder で表示」と「削除…」。処理中・順番待ちの行には出さない
+    check("上の段に「…」のメニューが無い", !document.querySelector('.objects-head [aria-haspopup="menu"]'));
+    const more = moreButton(entryOf(name1));
+    check(
+      "一覧の選んでいる行に「…」が見えている",
+      more && more.getAttribute("title") === "その他の操作" && getComputedStyle(more).opacity === "1",
+      more ? `${more.getAttribute("title")}・opacity ${getComputedStyle(more).opacity}` : "無い",
+    );
+    check("処理中の行には「…」が無い", !runningEntry() || !moreButton(runningEntry()));
+    const items1 = await openRowMenu(entryOf(name1));
+    check("「…」の中は「Finder で表示」と「削除…」（保存したので押せる）", menuItemsText(items1) === "Finder で表示|削除…", menuItemsText(items1));
+    await snap(sc, "row-menu");
     escape();
+    check("Esc で「…」のメニューを閉じる", await waitFor(() => !document.querySelector(".objects-row-menu"), 2000));
+    // 約束 版12: エンジンの一覧に、最後に保存したファイル（閉じたときの状態の lastSavedFiles）
+    const want = ["md", "txt", "json"].map((f) => `${out}/${stem}.${f}`);
+    const listed = await waitForAsync(async () => {
+      const h = (await invoke("list_history")).find((i) => i.jobId === job1);
+      return h && JSON.stringify(h.savedFiles) === JSON.stringify(want) ? h : null;
+    }, 5000);
+    check("エンジンの一覧に最後に保存したファイル（約束 版12）", listed, listed ? "" : JSON.stringify((await invoke("list_history")).find((i) => i.jobId === job1)?.savedFiles));
 
     // 処理中に、ほかの録音（書き終えた1本目）を開き直す: 2本目の処理は最後まで進む（エンジンの掃除の直し。約束 版9）
     await newRecording(L);
@@ -605,6 +748,18 @@
     await snap(sc, "fresh");
     await openEntry(name2);
     check("開くと「●」が消える・話者のタブ", !freshOf(entryOf(name2)) && tab() === L.speakers, entryText(entryOf(name2)));
+    // 一度も保存していない録音の「…」では「Finder で表示」を押せない（下に「まだ保存していません」）。
+    // 開いていない1本目は、エンジンの一覧の「最後に保存したファイル」で押せる（約束 版12）
+    const items2 = await openRowMenu(entryOf(name2));
+    const note = norm(document.querySelector(".objects-row-menu .objects-menu-note")?.textContent);
+    check("保存していない録音の「…」は「Finder で表示」を押せない・「まだ保存していません」", menuItemsText(items2) === "Finder で表示（押せない）|削除…" && note === "まだ保存していません", `${menuItemsText(items2)}・${note}`);
+    escape();
+    await waitFor(() => !document.querySelector(".objects-row-menu"), 2000);
+    const items3 = await openRowMenu(entryOf(name1));
+    check("開いていない保存済みの録音の「…」は「Finder で表示」を押せる", menuItemsText(items3) === "Finder で表示|削除…", menuItemsText(items3));
+    escape();
+    await waitFor(() => !document.querySelector(".objects-row-menu"), 2000);
+    hideOverlay();
 
     // 同じ録音を新しい録音として選び直す → 前回の文字起こしを使い、閉じたときの画面に手直しのまま戻る（版6・版8）
     await newRecording(L);
@@ -668,7 +823,9 @@
     await snap(sc, "naming");
     await toTab(L.transcript);
     check("保存（写真用）", (await saveAndWait()) === "saved");
-    await sleep(500);
+    // 保存の知らせが消えてから撮る（帯は「保存…」だけ。保存したことは上の印「保存済み」）
+    await waitFor(() => !document.querySelector(".toast"), 5000);
+    await sleep(300);
     await snap(sc, "result");
     // 新しい録音でファイルを選んだところ（写真 file-selected。一覧に1本目がある）
     await newRecording(L);
@@ -804,30 +961,45 @@
     check("話者が英語のラベル（Speaker A…）", labels.length > 0 && (!sc.expectSpeakers || labels.length === sc.expectSpeakers), labels.join(", "));
     const name = sc.recording.split("/").pop();
     check("一覧の行と印が英語（4 speakers · no names・Not saved yet）", entryText(entryOf(name)).includes("4 speakers · no names") && chipOf(entryOf(name)) === "Not saved yet", entryText(entryOf(name)));
-    check("保存の帯に「Change folder」", button("Change folder"));
+    const enBar = saveBar();
+    check("保存の帯は「Save…」だけ（英語）", enBar && [...enBar.querySelectorAll("button")].map((b) => norm(b.textContent)).join("|") === "Save…", enBar ? norm(enBar.textContent) : "無い");
     await snap(sc, "en-naming");
     await overflowCheck("話者のタブ（英語）");
 
     await toTab(L.transcript);
     const out = lastDone.outDir;
-    const folder = out.split("/").pop();
-    check("既定の保存先が「〈元の名前〉_transcript」（版7）", folder === "synth_meeting_transcript", folder);
+    check("保存先の既定は元のファイルと同じフォルダ（約束 版12）", out === folderOf(sc.recording), out);
     await snap(sc, "en-result");
     await overflowCheck("文字起こしのタブ（英語）");
     const view = await invoke("get_transcript", { jobId: lastDone.jobId, named: false });
     const hasUnresolved = view.unresolved.length > 0;
 
-    // 英語で .md・.txt・.json を保存して、中の言葉を確かめる
-    await clickWhen(".txt");
-    await clickWhen(".json");
-    await clickWhen("Save");
-    check("英語で保存（3件）→「Saved」", await waitFor(() => bodyText().includes("Saved (3 files)") && headChip() === "Saved", 15000), norm(bodyText().match(/Saved[^\n]*/)?.[0]));
-    const read = async () => {
+    // 英語で .md・.txt・.json を保存して、中の言葉を確かめる（ファイルの名前は「〈元の名前〉_transcript」。約束 版12）
+    const enDlg = await openSaveDialog(L);
+    const enFolder = enDlg ? dialogFolder(enDlg) : {};
+    check(
+      "英語の「Save…」の窓（Format・Save to・Same folder as the original）",
+      enDlg && norm(enDlg.querySelector(".dialog-title")?.textContent) === "Save" && enFolder.selected === `Same folder as the original (${folderOf(sc.recording).split("/").pop()})`,
+      enDlg ? `${norm(enDlg.querySelector(".dialog-title")?.textContent)}・${enFolder.selected}` : "窓が出ない",
+    );
+    await overflowCheck("「Save…」の窓（英語）");
+    let enSaved = null;
+    if (enDlg) {
+      await chooseFormats(saveDialog(), ["md", "txt", "json"]);
+      enSaved = await confirmSave(saveDialog(), L);
+    }
+    const enStem = savedStem(sc.recording, EN);
+    check(
+      "英語で保存（3件）→「Saved」・ファイルの名前は「〈元の名前〉_transcript」",
+      enSaved === "saved" && lastSaveToast === `Saved “${enStem}.md” and 2 more` && (await waitFor(() => headChip() === "Saved", 3000)),
+      `${lastSaveToast}・${headChip()}`,
+    );
+    const read = async (stemOf) => {
       const r = {};
-      for (const f of ["md", "txt", "json"]) r[f] = await invoke("dev_read", { path: `${out}/transcript.${f}` });
+      for (const f of ["md", "txt", "json"]) r[f] = await invoke("dev_read", { path: `${out}/${stemOf}.${f}` });
       return r;
     };
-    const en = await read();
+    const en = await read(enStem);
     const head = en.md.split("\n").filter((l) => !l.startsWith("["));
     check(
       "保存した .md の見出しと確認用の欄が英語",
@@ -854,13 +1026,15 @@
     check("言語を日本語に切り替えると画面が日本語", (await switchLocale("ja")) && (await waitFor(() => tab() === "文字起こし", 3000)), tab());
     const m1 = await menuIs(MENU_JA);
     check("Mac のメニューも日本語に作り直す（版7）", m1.ok && m1.menu[0]?.items?.[0] === "Kikiwake について", m1.menu.map((x) => x.title).join(" "));
-    await clickWhen("保存");
-    const again = await waitFor(() => (dialogTitle() === "同じ名前のファイルがあります" ? "dialog" : null), 15000);
-    if (again) await clickWhen("上書きする");
-    // 前の保存の「保存しました」は言語を切り替えると日本語で出ているので、ファイルの中身が変わるのを待つ
-    const rewritten = await waitForAsync(async () => (await invoke("dev_read", { path: `${out}/transcript.md` })).startsWith("# 話者付き"), 15000, 300);
-    check("日本語で上書きして保存（3件）", again && rewritten && bodyText().includes("保存しました（3件）"));
-    const ja = await read();
+    // 日本語で保存すると、ファイルの名前は「〈元の名前〉_文字起こし」（英語で保存したファイルとは別の名前なので、上書きの確かめは出ない）
+    const jaStem = savedStem(sc.recording, JA);
+    const jaSaved = await saveAndWait(JA);
+    check(
+      "日本語で保存（3件）→ ファイルの名前は「〈元の名前〉_文字起こし」（同じフォルダ）",
+      jaSaved === "saved" && lastSaveToast === `「${jaStem}.md」ほか2件を保存しました`,
+      `${jaSaved}・${lastSaveToast}`,
+    );
+    const ja = await read(jaStem);
     check("日本語で保存した .md は日本語の見出し", ja.md.startsWith("# 話者付き文字起こし: synth_meeting\n") && /^- 元ファイル: /m.test(ja.md), ja.md.split("\n")[0]);
     const tr = (s) => s.replace(/話者([A-Z]+)/g, "Speaker $1");
     const body = (text) => text.split("\n").filter((l) => l.startsWith("["));
@@ -872,7 +1046,7 @@
       same(body(ja.md).map(tr), body(en.md)) && jaTxt === en.txt && same(jaJson, enJson),
       `本文 ${body(en.md).length} 行・.json ${enJson.length} 件`,
     );
-    check("既定の保存先は言語を切り替えても変えない", bodyText().includes("synth_meeting_transcript"));
+    check("英語で保存したファイルは残る（言語で名前が違う）", (await invoke("dev_exists", { path: `${out}/${enStem}.md` })) && (await invoke("dev_exists", { path: `${out}/${jaStem}.md` })));
 
     // 英語に戻す → メニューも英語に
     check("英語に戻すと画面が英語", (await switchLocale("en")) && (await waitFor(() => tab() === "Transcript", 3000)), tab());
@@ -926,7 +1100,26 @@
     const job1 = lastDone.jobId;
     for (const [label, name] of Object.entries(sc.names)) await typeName(label, name);
     await toTab(L.transcript);
-    check("1本目を保存", (await saveAndWait()) === "saved");
+    // 前に選んだフォルダがある（Mac のフォルダを選ぶ画面は操作役から押せないので、選んだあとの記録を置く）→ 窓の選択肢に出る。
+    // それを選び、.md・.json で保存する → 選んだフォルダに録音の名前入りで書く・覚える（閉じて開き直しても。history2）
+    localStorage.setItem("kikiwake.save", JSON.stringify({ formats: ["md"], dir: null, recent: sc.saveDir }));
+    const dlg = await openSaveDialog(L);
+    const f0 = dlg ? dialogFolder(dlg) : {};
+    check(
+      "保存先の選択肢: 元のファイルと同じフォルダ・前に選んだフォルダ・ほかのフォルダを選ぶ…",
+      dlg && f0.value === "source" && JSON.stringify(f0.options) === JSON.stringify([`元のファイルと同じフォルダ（${folderOf(sc.recording).split("/").pop()}）`, sc.saveDir.split("/").pop(), "ほかのフォルダを選ぶ…"]),
+      JSON.stringify(f0.options),
+    );
+    let s1 = null;
+    if (dlg) {
+      await chooseFolder(dlg, "recent");
+      await chooseFormats(dlg, ["md", "json"]);
+      s1 = await confirmSave(dlg, L);
+    }
+    const stem = savedStem(sc.recording);
+    const savedTo = ["md", "json"].map((f) => `${sc.saveDir}/${stem}.${f}`);
+    const bothThere = (await invoke("dev_exists", { path: savedTo[0] })) && (await invoke("dev_exists", { path: savedTo[1] }));
+    check("1本目を前に選んだフォルダへ保存（.md・.json・録音の名前入り）", s1 === "saved" && bothThere, `${s1}・${lastSaveToast}`);
     const edits = JSON.parse(await invoke("dev_read", { path: `${sc.fixtures}/edits_example.json` }));
     const [tid, text] = Object.entries(edits.texts)[0];
     check(`行 ${tid} の文字を直す →「保存後に手直し」`, (await editText(tid, text)) && headChip() === "保存後に手直し", headChip());
@@ -936,14 +1129,22 @@
     await sleep(600);
     const d1 = await readDraft(sc, job1);
     check(
-      "閉じたときの状態を作業フォルダに書く（話者のタブ・入れかけの名前・直した文字・保存したことがある・保存後に変えた）",
+      "閉じたときの状態を作業フォルダに書く（話者のタブ・入れかけの名前・直した文字・保存したことがある・保存後に変えた・最後に保存したファイル）",
       d1?.draft?.screen === "naming" &&
         d1.draft.names?.[dLabel] === "入れかけの名前" &&
         d1.draft.textHistory?.[tid]?.slice(-1)[0] === text &&
         d1.draft.savedOnce === true &&
-        d1.draft.unsaved === true,
-      d1 ? `screen ${d1.draft?.screen}・savedOnce ${d1.draft?.savedOnce}・unsaved ${d1.draft?.unsaved}` : "draft.json が無い",
+        d1.draft.unsaved === true &&
+        JSON.stringify(d1.draft.lastSavedFiles) === JSON.stringify(savedTo),
+      d1 ? `screen ${d1.draft?.screen}・savedOnce ${d1.draft?.savedOnce}・unsaved ${d1.draft?.unsaved}・lastSavedFiles ${JSON.stringify(d1.draft?.lastSavedFiles)}` : "draft.json が無い",
     );
+    let prefs = null;
+    try {
+      prefs = JSON.parse(localStorage.getItem("kikiwake.save") || "null");
+    } catch {
+      prefs = null;
+    }
+    check("選んだ形式と保存先を覚える（.md・.json／前に選んだフォルダ）", prefs && prefs.formats.join(",") === "md,json" && prefs.dir === sc.saveDir, JSON.stringify(prefs));
 
     // 2本目: 始めてから1本目を開いて見ている間に、裏で最後まで終わる →「●」
     await newRecording(L);
@@ -993,12 +1194,31 @@
       entryText(entryOf(n1)),
     );
     await snap(sc, "history-list");
+    // 約束 版12: 閉じて開き直しても、エンジンの一覧に1本目の最後に保存したファイル（前に選んだフォルダ）。行の「…」の「Finder で表示」を押せる
+    const stem = savedStem(sc.recording);
+    const savedTo = ["md", "json"].map((f) => `${sc.saveDir}/${stem}.${f}`);
+    const h1 = (await invoke("list_history")).find((i) => nameOf(i.path) === n1);
+    check("開き直しても、エンジンの一覧に最後に保存したファイル（約束 版12）", h1 && JSON.stringify(h1.savedFiles) === JSON.stringify(savedTo), JSON.stringify(h1?.savedFiles));
+    const items1 = await openRowMenu(entryOf(n1));
+    check("開いていない1本目の「…」の「Finder で表示」を押せる", menuItemsText(items1) === "Finder で表示|削除…", menuItemsText(items1));
+    escape();
+    await waitFor(() => !document.querySelector(".objects-row-menu"), 2000);
     // 1本目を開く → 閉じたときの話者のタブに、入れかけの名前のまま
     await openEntry(n1);
     const dLabel = Object.keys(sc.names).slice(-1)[0];
     const input = await typeName(dLabel);
     check("開き直すと、閉じたときの話者のタブで、入れかけの名前が戻る（版8）", tab() === L.speakers && input?.value === "入れかけの名前", `${tab()}・${input?.value}`);
     if (input) setValue(input, sc.names[dLabel]);
+    // 「保存…」の窓は、閉じる前に選んだ形式と保存先のまま（覚えている）
+    const dlg = await openSaveDialog(L);
+    const f1 = dlg ? dialogFolder(dlg) : {};
+    check(
+      "閉じて開き直しても「保存…」の窓は前に選んだまま（.md・.json・前に選んだフォルダ）",
+      dlg && JSON.stringify(dialogFormats(dlg)) === JSON.stringify([["md", true], ["txt", false], ["json", true]]) && f1.value === "recent" && f1.selected === sc.saveDir.split("/").pop(),
+      dlg ? `${JSON.stringify(dialogFormats(dlg))}・${f1.selected}` : "窓が出ない",
+    );
+    if (dlg) [...dlg.querySelectorAll("button")].find((b) => norm(b.textContent) === "キャンセル")?.click();
+    check("「キャンセル」で窓を閉じる（保存しない）", await waitFor(() => !saveDialog(), 2000) && headChip() === "保存後に手直し", headChip());
     await toTab(L.transcript);
     const edits = JSON.parse(await invoke("dev_read", { path: `${sc.fixtures}/edits_example.json` }));
     const [tid, text] = Object.entries(edits.texts)[0];
@@ -1007,6 +1227,19 @@
     // 2本目を開くと「●」が消える
     await openEntry(n2);
     check("開くと「●」が消える", !freshOf(entryOf(n2)));
+
+    // 保存したファイルを移した: 開いていない1本目の「…」の「Finder で表示」→ その録音を開いて帯「保存したファイルが見つかりません」
+    // （見つからないので Finder は開かない）
+    await invoke("dev_rename", { from: savedTo[0], to: `${savedTo[0]}.moved` });
+    const items2 = await openRowMenu(entryOf(n1));
+    items2?.find((b) => norm(b.firstChild?.textContent) === "Finder で表示")?.click();
+    check(
+      "保存したファイルが見つからないと、その録音を開いて帯（もう一度保存すると作り直せる）",
+      await waitFor(() => title() === n1 && bodyText().includes("保存したファイルが見つかりません") && bodyText().includes("もう一度保存すると作り直せます"), 10000),
+      `${title()}`,
+    );
+    await snap(sc, "saved-missing");
+    await invoke("dev_rename", { from: `${savedTo[0]}.moved`, to: savedTo[0] });
 
     // 元のファイルが見つからない（移した）: 一覧の行に一言。開くと帯と「ファイルを選び直す」、行の再生はできない
     await invoke("dev_rename", { from: sc.recording, to: `${sc.recording}.moved` });
@@ -1036,19 +1269,30 @@
     check("結び直すと帯が消えて、行を再生できる", await waitFor(() => !bodyText().includes("元のファイルが変わっています") && firstPlay() && !firstPlay().disabled, 10000));
     check("結び直しても一覧の場所は変わらない（録音の ID は変わる）", await waitFor(() => entryEls().indexOf(entryOf(n1)) === pos && !entryText(entryOf(n1)).includes("元のファイル"), 5000), `${pos} → ${entryEls().indexOf(entryOf(n1))}`);
 
-    // 一覧から消す（「…」のメニュー）→ 確かめる → 消える。元の録音と保存したファイルは残り、作業フォルダは消える
+    // 行の「…」の「削除…」（2026-09-29 の2回目。前は「一覧から消す…」のごみ箱）→ 確かめる → 消える。元の録音と保存したファイルは残り、作業フォルダは消える
     const job1 = (entryOf(n1)?.getAttribute("data-entry") || "").replace(/^h:/, "");
-    const saved = `${sc.recording.replace(/\.wav$/, "")}_文字起こし/transcript_named.md`;
-    const menu = await moreMenu();
-    menu.find((b) => norm(b.textContent) === "一覧から消す…")?.click();
-    const dlg = await waitFor(() => dialogTitle() === "一覧から消しますか？", 3000);
-    check("消す前に確かめる（元のファイルと保存したファイルは消えないと書いてある）", dlg && bodyText().includes("元のファイルと、保存したファイルは消えません"));
-    if (dlg) document.querySelector(".dialog .btn-danger")?.click();
+    const items3 = await openRowMenu(entryOf(n1));
+    items3?.find((b) => norm(b.textContent) === "削除…")?.click();
+    const del = await waitFor(() => dialogTitle() === `「${n1}」を削除しますか？`, 3000);
+    const delBody = dialogBody();
+    check(
+      "削除する前に確かめる（題に録音の名前。消えるもの・元に戻せない／元のファイルと保存したファイルは削除しない）",
+      del &&
+        delBody[0] === "この Mac に残っている文字起こし・名前・手直しを削除します。元に戻せません。" &&
+        delBody[1] === "元のファイルと、保存したファイルは削除しません。" &&
+        button("やめる") &&
+        document.querySelector(".dialog .btn-danger") &&
+        norm(document.querySelector(".dialog .btn-danger").textContent) === "削除",
+      `${dialogTitle()}・${delBody.join(" ／ ")}`,
+    );
+    await snap(sc, "delete-dialog");
+    if (del) document.querySelector(".dialog .btn-danger")?.click();
+    check("削除したと知らせる", await waitFor(() => toast() === "削除しました", 3000), toast());
     await waitFor(() => !entryOf(n1), 5000);
     const recKept = await invoke("dev_exists", { path: sc.recording });
-    const savedKept = await invoke("dev_exists", { path: saved });
+    const savedKept = (await invoke("dev_exists", { path: savedTo[0] })) && (await invoke("dev_exists", { path: savedTo[1] }));
     const jobGone = !(await invoke("dev_exists", { path: `${sc.cacheDir}/jobs/${job1}` }));
-    check("消すと一覧から消え、作業フォルダも消える。元の録音と保存したファイルは残る", !entryOf(n1) && recKept && savedKept && jobGone, `元の録音 ${recKept}・保存したファイル ${savedKept}・作業フォルダが消えた ${jobGone}`);
+    check("削除すると一覧から消え、作業フォルダも消える。元の録音と保存したファイルは残る", !entryOf(n1) && recKept && savedKept && jobGone, `元の録音 ${recKept}・保存したファイル ${savedKept}・作業フォルダが消えた ${jobGone}`);
 
     // 3本目を再開（声の聞き分けの結果を使い、声を文字にするところから）
     await openEntry(n3, { wait: false });

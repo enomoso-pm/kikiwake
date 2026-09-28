@@ -37,6 +37,7 @@ function changed(s: AppState, p: AppState): boolean {
     s.formats !== p.formats ||
     s.outDir !== p.outDir ||
     s.saved !== p.saved ||
+    s.lastSaved !== p.lastSaved ||
     s.savedOnce !== p.savedOnce ||
     s.savedEdits !== p.savedEdits ||
     s.appliedNames !== p.appliedNames ||

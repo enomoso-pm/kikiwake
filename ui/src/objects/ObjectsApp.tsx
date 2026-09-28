@@ -35,20 +35,21 @@ function useWide(): boolean {
   return wide;
 }
 
-/** 「一覧から消す…」の確かめ（形はほかの確かめる窓と同じ） */
+/** 「削除…」の確かめ（形はほかの確かめる窓と同じ。題に録音の名前、本文は何が消えるかと何が残るかの2段落） */
 function DeleteDialog() {
   const t = useT();
   const item = useObjects((s) => s.deleting);
   if (!item) return null;
   return (
     <Dialog
-      title={t.objects.deleteTitle}
+      title={t.objects.deleteTitle(item.name)}
       cancelLabel={t.dialog.stay}
       confirmLabel={t.objects.deleteConfirm}
       onCancel={cancelDelete}
       onConfirm={() => void confirmDelete()}
     >
-      {t.objects.deleteBody(item.name)}
+      <p>{t.objects.deleteBody}</p>
+      <p style={{ marginTop: 10 }}>{t.objects.deleteKeeps}</p>
     </Dialog>
   );
 }

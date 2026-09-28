@@ -6,12 +6,14 @@
   // （筋書き en は scripts/e2e_mac.sh が -AppleLanguages (en-US) で起動して、英語の Mac のまねをする）
   try {
     localStorage.removeItem("kikiwake.locale");
-    // 前の筋書きの記録（「この版は知らせない」にした版・見ていない間に終わった録音の「●」）も忘れさせる。
+    // 前の筋書きの記録（「この版は知らせない」にした版・見ていない間に終わった録音の「●」・保存の窓で選んだもの）も忘れさせる。
     // 閉じて開き直す筋書き history2 だけは、history1 の記録を残す（閉じても覚えているかを見るため）
     if (window.__kkScenarioName !== "history2") {
       localStorage.removeItem("kikiwake.update.dismissed");
       localStorage.removeItem("kikiwake.update.check");
       localStorage.removeItem("kikiwake.fresh");
+      // 「保存…」の窓で選んだ形式と保存先（2026-09-29）。毎回、初めの値（.md・元のファイルと同じフォルダ）から
+      localStorage.removeItem("kikiwake.save");
     }
   } catch {
     // 読めない所では何もしない

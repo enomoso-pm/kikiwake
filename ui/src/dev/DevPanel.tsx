@@ -266,7 +266,8 @@ export default function DevPanel() {
               [
                 ["normal", "通常"],
                 ["existing", "同じ名前のファイルあり"],
-                ["failed", "失敗"],
+                ["failed", "失敗（空き容量）"],
+                ["notWritable", "書き込めない"],
               ] as const
             ).map(([k, label]) => (
               <Option key={k} label={label} active={sc.save === k} onClick={() => set({ save: k })} />
