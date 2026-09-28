@@ -34,12 +34,12 @@
 
 1. [Releases](https://github.com/enomoso-pm/kikiwake/releases) から `Kikiwake_<版>_aarch64.dmg` を落とします
 2. 開いて、「Kikiwake」を「アプリケーション」にドラッグします
-3. 初めて開くときだけ、macOS の確かめが要ります。Kikiwake は Apple の有料の開発者登録をしていないので、そのままでは「開けません」と出ます
+3. 初めて開くときだけ、macOS の確かめが要ります（.dmg の窓にも、同じ手順を実物の画面の絵で載せています）。Kikiwake は Apple の有料の開発者登録をしていないので、そのままでは「開けません」と出ます
    - **macOS 15 以降**:
-     1. 「Kikiwake」を開きます。開けないという警告が出たら「完了」を押します（「ゴミ箱に入れる」は押さないでください）
-     2. アップルメニュー →「システム設定」→「プライバシーとセキュリティ」を開きます
-     3. 下のほうの「セキュリティ」にある、Kikiwake がブロックされたという表示の横の「このまま開く」を押し、パスワードを入れます
-     4. もう一度出る確かめで「このまま開く」を押すと開きます
+     1. 「アプリケーション」の「Kikiwake」を開きます。「“Kikiwake”は開いていません」という警告が出たら「完了」を押します（「ゴミ箱に入れる」は押さないでください）。この警告は開き直しても出るので、そのまま次へ進みます
+     2. .dmg の中の「設定を開く」をダブルクリックします。「システム設定」の「プライバシーとセキュリティ」の、「セキュリティ」の欄が開きます（アップルメニュー →「システム設定」→「プライバシーとセキュリティ」と進み、右側を下へ送っても同じです）
+     3. 「お使いのMacを保護するために“Kikiwake”がブロックされました。」の横の「このまま開く」を押し、パスワードを入れます
+     4. 「“Kikiwake”を開きますか?」と出たら「このまま開く」を押すと開きます（出ないときは、Kikiwake を開き直してください）
    - **macOS 14**: Finder で「Kikiwake」を右クリック →「開く」→ もう一度「開く」
    - 2 回目からは普通に開けます。新しい版に入れ替えたときは、もう一度この手順が要ります
 4. 「書類」「デスクトップ」「ダウンロード」や外付けのドライブ、Google ドライブなどにある録音を使うと、macOS が「フォルダ内のファイルへのアクセス」を尋ねることがあります。「許可」を押してください（録音を読み込み、文字起こしをその隣に保存するために使います）
@@ -123,6 +123,6 @@ Everything runs locally on your Mac: no audio or text is sent anywhere, and ther
 - **Language:** The app is available in **Japanese and English**. It starts in your Mac's language, and you can switch at the top right of the window. Saved transcripts follow the app's language. Transcription currently supports **Japanese recordings only**.
 - **Requirements:** Apple silicon Mac, macOS 14 or later, 16 GB of memory recommended, about 4 GB of free disk space.
 - **Recordings list:** The list on the left shows recordings being transcribed, queued, and done, each with a status (Transcribing, Queued, Stopped, Not saved yet, Saved, Edited since saving). You can open another recording while one is being transcribed. Reopening returns you to where you left off, including names you were typing and text you edited (even if you didn't save a file). Stopped recordings can be resumed. Removing a recording from the list deletes only Kikiwake's working data, not your recording or saved transcripts.
-- **Install:** Download the `.dmg` from [Releases](https://github.com/enomoso-pm/kikiwake/releases) and drag Kikiwake to Applications. The app is not notarized by Apple, so on first launch go to System Settings → Privacy & Security and click "Open Anyway" (macOS 15 or later). Step-by-step instructions are in `Read Me First.txt` in the `.dmg`.
+- **Install:** Download the `.dmg` from [Releases](https://github.com/enomoso-pm/kikiwake/releases) and drag Kikiwake to Applications. The app is not notarized by Apple, so on first launch go to System Settings → Privacy & Security and click "Open Anyway" (macOS 15 or later; the “設定を開く” (Open Settings) icon in the `.dmg` opens that screen). Step-by-step instructions are in `Read Me First.txt` in the `.dmg`.
 - **Built with:** whisper.cpp (Whisper large-v3), NeMo-Speech.cpp (Nemotron 3 Diarization), Tauri, React, and Rust.
 - **License:** MIT. See [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) for third-party licenses.

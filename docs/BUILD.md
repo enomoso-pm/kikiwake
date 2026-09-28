@@ -10,7 +10,8 @@ Apple シリコンの Mac で作ります（Intel の Mac と Windows は、ま�
 | CMake・Ninja | CMake 3.26 以上 | `brew install cmake ninja` |
 | Rust | stable | [rustup](https://rustup.rs/) |
 | Node.js | 20 以上 | `brew install node` |
-| git・Python 3 | — | Command Line Tools に入っている |
+| git | — | Command Line Tools に入っている |
+| Python | 3.10 以上（.dmg を作る dmgbuild のため。Mac に最初から入っている 3.9 では動かない） | `brew install python` |
 
 ## 作る
 
@@ -22,9 +23,10 @@ cd kikiwake
 #    要る部品（third_party の 2 つと、その中の ggml・sentencepiece）はこのスクリプトが取ってくる
 bash scripts/build_engines_mac.sh
 
-# 2. 画面の部品と、Tauri の道具（Mac 全体には入れず build/tools に置く）
+# 2. 画面の部品と、Tauri の道具・.dmg を作る道具 dmgbuild（どちらも Mac 全体には入れず build/tools に置く）
 (cd ui && npm ci)
 npm install --prefix build/tools @tauri-apps/cli@^2
+python3 -m venv build/tools/dmgbuild && build/tools/dmgbuild/bin/pip install dmgbuild==1.6.7 ds_store==1.3.1 mac_alias==2.2.2
 
 # 3. アプリと配る .dmg → src-tauri/target/release/bundle/macos/Kikiwake.app・build/dist/Kikiwake_<版>_aarch64.dmg（と照合用の .sha256）
 bash scripts/build_app_mac.sh
@@ -36,6 +38,10 @@ bash scripts/build_app_mac.sh
 - `git clone --recursive` は使わない（NeMo-Speech.cpp が持つ、話者判定に要らない部品と大容量ファイル置き場のデータまで落ちてくる）
 - エンジンの確かめ（依存が OS 標準だけ・動く macOS の下限・M1 に無い命令が無いか）は `scripts/check_engines_mac.sh`（`build_engines_mac.sh` の最後に自動で走る）
 - AI モデルは、アプリが初回にダウンロードする（リポジトリには入れない）
+- .dmg の窓には、初めて開くときの手順を絵で入れている（`scripts/dmg/`。窓の大きさとアイコンの並びは `dmgbuild_settings.py`）。
+  絵の元は `background.html` で、文や配置を変えたら `bash scripts/dmg/render_background.sh`（Google Chrome を画面なしで使う）で
+  `background.png`・`background@2x.png` を描き直してリポジトリに入れる。絵の中の警告と設定の画面は macOS 26 の本物（`shots/`）。
+  「設定を開く」（.webloc）は、システム設定の「プライバシーとセキュリティ」の「セキュリティ」の欄を開く
 
 ## 署名
 
@@ -73,7 +79,7 @@ bash scripts/build_app_mac.sh
 | `ui/` | 画面（React・TypeScript・Vite）。[ui/README.md](../ui/README.md) |
 | `contract/` | 画面とエンジン側の受け渡しの約束（データの形・関数・見本データ）。[contract/README.md](../contract/README.md) |
 | `third_party/` | エンジン 2 つ（whisper.cpp・NeMo-Speech.cpp。git submodule で版を固定。中身は変えない） |
-| `scripts/` | エンジンのビルド、.dmg、ライセンス一覧（`make_notices.py`）、見本の仮の音（`make_mock_audio.py`）、操作役（`e2e_mac.sh`） |
+| `scripts/` | エンジンのビルド、.dmg（`make_dmg.sh`。窓の絵・案内・「設定を開く」は `dmg/`）、ライセンス一覧（`make_notices.py`）、見本の仮の音（`make_mock_audio.py`）、操作役（`e2e_mac.sh`） |
 
 ## 決まりごと
 

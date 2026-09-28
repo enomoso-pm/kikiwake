@@ -13,12 +13,16 @@ Transcription currently supports Japanese recordings only.
    Kikiwake isn't registered with Apple's paid developer program, so at first macOS says it can't be opened.
 
    macOS 15 or later:
-     1) Open "Kikiwake" in Applications. When a warning says it can't be opened, click "Done"
-        (don't click "Move to Trash").
-     2) Choose Apple menu > System Settings > Privacy & Security.
-     3) Under "Security" near the bottom, you'll see a message saying that "Kikiwake" was blocked.
-        Click "Open Anyway" next to it and enter your password.
-     4) When asked again, click "Open Anyway". Kikiwake opens.
+     1) Open "Kikiwake" in Applications. When the warning “Kikiwake” Not Opened appears, click "Done"
+        (don't click "Move to Trash"). The warning appears every time you try to open Kikiwake,
+        so go on to step 2 instead of opening it again.
+     2) Double-click "設定を開く" (Open Settings) in this disk image. It opens the "Security" section of
+        System Settings > Privacy & Security. (Or choose Apple menu > System Settings > Privacy & Security
+        and scroll down to "Security".)
+     3) Next to “Kikiwake” was blocked to protect your Mac., click "Open Anyway" and enter your password.
+        (This button is available for about an hour after the warning. If it isn't there, start again from step 1.)
+     4) When asked Open “Kikiwake”?, click "Open Anyway". Kikiwake opens.
+        (If you're not asked, open Kikiwake again.)
 
    macOS 14:
      In Finder, Control-click "Kikiwake", choose "Open", then click "Open" again.

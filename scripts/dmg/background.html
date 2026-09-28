@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Kikiwake .dmg background</title>
+<!--
+  .dmg の窓の背景（scripts/make_dmg.sh が使う background.png・background@2x.png の元）。
+  作り直し: bash scripts/dmg/render_background.sh（Google Chrome で 1 倍・2 倍に描く）
+
+  - 窓（dmgbuild_settings.py の window_rect）はタイトルバーを含めて 800×618。中身は macOS 26 で約 585、macOS 14・15 で約 590。
+    大事なもの（アイコンの名前まで）は左上の 800×580 に収める
+  - 絵は 1920×1200 まで同じ色で広げてある。Finder は背景の絵を左上に固定して伸び縮みさせないので、窓を広げても白い所が出ないように
+  - 地の色 #5d7892 は、Finder のアイコンの名前（ライトモードは黒・ダークモードは白）のどちらとも 4.6:1 で読める色
+  - アイコンの位置は dmgbuild_settings.py の icon_locations と合わせる（Kikiwake 230,80・アプリケーション 570,80・設定を開く 414,518・
+    はじめに読む.txt 84,518・Read Me First.txt 204,518）。「設定を開く」は 3 の画面（プライバシーとセキュリティのセキュリティの欄）を開く .webloc
+  - 2 と 3 の画面は macOS 26 の本物（shots/。確かめ用のユーザーで撮った写真から切り出し、後ろの写り込みを消した）。
+    4 はボタンだけを描く（macOS 26 の日本語の文言は CoreServicesUIAgent の CodeEvaluation・QuarantineHeadlines の表のまま）
+-->
+<style>
+  :root {
+    --bg: #5d7892;
+    --card: #ffffff;
+    --ink: #1d1f22;
+    --ink-2: #3d4046;
+    --ink-3: #5d6168;
+    --accent: #3d6a96;
+    --ring: #e8590c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1200px; overflow: hidden; background: var(--bg); }
+  body { position: relative; font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; color: #fff; -webkit-font-smoothing: antialiased; font-feature-settings: "palt"; }
+
+  .num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; flex: none; }
+  .on-bg .drag-cap .num { background: #fff; color: var(--bg); }
+
+  .drag-cap { position: absolute; left: 290px; width: 220px; top: 30px; display: flex; gap: 7px; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; }
+  .drag-arrow { position: absolute; left: 0; top: 0; }
+
+  .lead { position: absolute; left: 20px; top: 152px; }
+  .lead h1 { font-size: 15.5px; font-weight: 600; }
+  .lead p { font-size: 12px; margin-top: 3px; }
+
+  .card { position: absolute; top: 202px; height: 262px; background: var(--card); border-radius: 12px; box-shadow: 0 2px 10px rgba(0, 0, 0, .16); padding: 12px 12px 0; color: var(--ink); }
+  .card h2 { display: flex; gap: 7px; align-items: flex-start; font-size: 13.5px; font-weight: 600; line-height: 20px; }
+  .card .note { position: absolute; left: 12px; right: 12px; bottom: 10px; font-size: 11px; line-height: 1.5; color: var(--ink-3); }
+  .shot { position: absolute; }
+  .shot img { display: block; width: 100%; }
+  .ring { position: absolute; border: 2.5px solid var(--ring); }
+
+  .c2 { left: 16px; width: 196px; }
+  .c2 .shot { left: 18px; top: 58px; width: 160px; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .18)); }
+  /* 完了ボタンは切り出しの (28,411)-(483,466)px。160/514 倍で (8.7,127.9)-(150.4,145.1) */
+  .c2 .ring { left: 4.7px; top: 123.9px; width: 149.7px; height: 25.2px; border-radius: 14px; }
+
+  .c3 { left: 224px; width: 380px; }
+  .c3 .shot { left: 12px; top: 58px; width: 356px; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px #e3e3de; }
+  /* このまま開くは切り出しの (708,167)-(898,214)px。356/922 倍で (273.4,64.5)-(346.7,82.6)。札の中では 12,58 を足す */
+  .c3 .ring { left: 281.4px; top: 118.5px; width: 81.3px; height: 26.1px; border-radius: 8px; }
+
+  .shortcut { position: absolute; left: 466px; top: 508px; font-size: 13px; font-weight: 600; }
+
+  .c4 { left: 616px; width: 168px; }
+  .c4 .ask { font-size: 11.5px; line-height: 1.5; color: var(--ink-2); margin-top: 14px; }
+  .c4 .ask b { font-weight: 600; color: var(--ink); }
+  .c4 .btn { position: absolute; left: 22px; top: 136px; width: 124px; height: 30px; border-radius: 15px; background: #e9e9ec; color: #1d1d1f; font-size: 12.5px; line-height: 30px; text-align: center; }
+  .c4 .ring { left: 18px; top: 132px; width: 132px; height: 38px; border-radius: 19px; }
+</style>
+</head>
+<body class="on-bg">
+  <div class="drag-cap"><span class="num">1</span>「アプリケーション」へドラッグ</div>
+  <svg class="drag-arrow" width="800" height="160" viewBox="0 0 800 160" aria-hidden="true">
+    <line x1="306" y1="80" x2="486" y2="80" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <polyline points="473,68 489,80 473,92" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+
+  <div class="lead">
+    <h1>初めて開くときだけ、2 → 3 → 4 の順に押します（2 回目からは普通に開けます）</h1>
+    <p>警告は、Apple の有料の開発者登録をしていないために出るもので、壊れているわけではありません。</p>
+  </div>
+
+  <section class="card c2">
+    <h2><span class="num">2</span><span>Kikiwake を開くと出る<br>警告で「完了」</span></h2>
+    <div class="shot"><img src="shots/gatekeeper@2x.png" alt=""><span class="ring"></span></div>
+    <p class="note">「ゴミ箱に入れる」が出ても押さないでください。</p>
+  </section>
+
+  <section class="card c3">
+    <h2><span class="num">3</span><span>「システム設定」→「プライバシーとセキュリティ」<br>→ 下のほうの「このまま開く」</span></h2>
+    <div class="shot"><img src="shots/security@2x.png" alt=""></div>
+    <span class="ring"></span>
+    <p class="note">下の「設定を開く」をダブルクリックすると、この画面が開きます。「このまま開く」を押したら、パスワードを入れます。</p>
+  </section>
+
+  <p class="shortcut">← ここをダブルクリックすると、3 の画面が開きます</p>
+
+  <section class="card c4">
+    <h2><span class="num">4</span><span>もう一度<br>「このまま開く」</span></h2>
+    <p class="ask"><b>「“Kikiwake” を開きますか?」</b>と出たら、押します。これで開きます。</p>
+    <span class="btn">このまま開く</span>
+    <span class="ring"></span>
+    <p class="note">出ないときは、Kikiwake を開き直してください。</p>
+  </section>
+</body>
+</html>
