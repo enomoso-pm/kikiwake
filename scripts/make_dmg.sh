@@ -35,10 +35,11 @@ rm -f "$OUT/$NAME" "$OUT/$NAME.sha256"
 MNT="$(mktemp -d)"
 hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$OUT/$NAME" >/dev/null
 fail=""
-for f in Kikiwake.app 設定を開く.webloc はじめに読む.txt "Read Me First.txt" .background.tiff .DS_Store; do
+for f in Kikiwake.app はじめに読む.txt "Read Me First.txt" .background.tiff .DS_Store; do
   [ -e "$MNT/$f" ] || fail="$fail $f が無い。"
 done
 [ "$(readlink "$MNT/アプリケーション" || true)" = /Applications ] || fail="$fail 「アプリケーション」への近道が無い。"
+[ "$(readlink "$MNT/設定を開く" || true)" = /System/Library/PreferencePanes/Security.prefPane ] || fail="$fail 「設定を開く」の近道が無い。"
 codesign --verify --deep --strict "$MNT/Kikiwake.app" || fail="$fail Kikiwake.app の署名が壊れている。"
 hdiutil detach "$MNT" >/dev/null
 rmdir "$MNT" 2>/dev/null || true

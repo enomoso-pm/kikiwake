@@ -41,7 +41,8 @@ bash scripts/build_app_mac.sh
 - .dmg の窓には、初めて開くときの手順を絵で入れている（`scripts/dmg/`。窓の大きさとアイコンの並びは `dmgbuild_settings.py`）。
   絵の元は `background.html` で、文や配置を変えたら `bash scripts/dmg/render_background.sh`（Google Chrome を画面なしで使う）で
   `background.png`・`background@2x.png` を描き直してリポジトリに入れる。絵の中の警告と設定の画面は macOS 26 の本物（`shots/`）。
-  「設定を開く」（.webloc）は、システム設定の「プライバシーとセキュリティ」の「セキュリティ」の欄を開く
+  「設定を開く」は、システム設定の「プライバシーとセキュリティ」の昔の部品（`/System/Library/PreferencePanes/Security.prefPane`）への近道で、
+  開くと「セキュリティ」の欄が出る（住所を書いた .webloc は macOS 26 が開かない）
 
 ## 署名
 
