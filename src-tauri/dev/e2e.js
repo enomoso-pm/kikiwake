@@ -11,6 +11,8 @@
 //   history1・history2  履歴と閉じたときの状態（約束 版8・版9・版12）。scripts/e2e_mac.sh が同じ作業フォルダで2回起動する
 //   en     英語（約束 版7）: 英語の Mac のまねで起動 → メニュー・画面・保存が英語、保存するファイルが「_transcript」→ 日本語に切り替えるとメニューと保存も日本語に。
 //          英語がはみ出さないか（1200×800・900×560）
+//   screens マニュアルの素材（約束 版13）: 作り物の画面共有の録画（scripts/make_screens_video.sh）で「マニュアル用に、画面の絵も取り出す」→ 処理中の一文 →
+//          絵の数 →「保存…」の .zip（毎回外れている・.md と一緒に・zip だけ・上書き）。zip の中身は scripts/e2e_mac.sh が確かめる
 // 保存（2026-09-29 決定・約束 版12）: 保存の帯は「保存…」だけで、押すと窓で形式と保存先を選ぶ（覚えて次からも同じ）。ファイルは録音の名前入り
 // 「<元の名前>_文字起こし.<形式>」を、選んだフォルダ（既定は元のファイルと同じフォルダ）にそのまま書く。Finder で表示と削除は一覧の行の「…」から
 (() => {
@@ -833,6 +835,69 @@
     await snap(sc, "file-selected");
   }
 
+  // ---- マニュアルの素材（約束 版13。作り物の画面共有の録画: scripts/make_screens_video.sh） -------------------------
+
+  /** 新しい録音の「マニュアル用に、画面の絵も取り出す」（録画のときだけ） */
+  const screensOption = () => document.querySelector(".screens-option");
+  /** 「保存…」の窓の .zip の行 */
+  const zipRow = (dlg) => [...dlg.querySelectorAll(".save-format")].find((b) => norm(b.querySelector(".save-format-ext")?.textContent) === ".zip");
+
+  async function screensScenario(sc) {
+    const L = JA;
+    await screen(L.newTitle, 30000);
+    const s1 = await chooseFile(sc.recording, L);
+    const opt = screensOption();
+    check("録画を選ぶと「マニュアル用に、画面の絵も取り出す」が出て、初めは外れている", opt && opt.getAttribute("aria-checked") === "false", norm(opt?.textContent).slice(0, 40));
+    const before = norm(document.querySelector(".page-scroll .card strong")?.textContent);
+    opt?.click();
+    await sleep(100);
+    const after = norm(document.querySelector(".page-scroll .card strong")?.textContent);
+    // 目安は画面の読み取りのぶん（FileInfo.estimateScreens）。読み取りは文字起こしと同時に進めるので、短い録音では表示は変わらない
+    check("チェックを入れられる（所要時間の目安はマニュアル用の値に）", screensOption()?.getAttribute("aria-checked") === "true" && Boolean(after), `${before} → ${after}`);
+    await snap(sc, "file-screens");
+    s1.click();
+    check(
+      "処理中に「画面の絵も取り出しています」",
+      await waitFor(() => bodyText().includes("マニュアル用に、画面の絵も取り出しています"), 10000),
+    );
+    const w = await waitNaming(sc, L);
+    const got = lastDone?.screens;
+    check(
+      "終わると画面の絵の数が届く（作り物の録画: 絵 4・場面 3・変化 1・顔 0。スクロールは次の場面にまとめる）",
+      got && got.frames === 4 && got.scenes === 3 && got.steps === 1 && got.faces === 0,
+      `${fmt(w.sec)} 秒・${JSON.stringify(got)}`,
+    );
+
+    // 保存: .md と zip（zip は毎回外れた状態で開く）
+    let dlg = await openSaveDialog(L);
+    let z = zipRow(dlg);
+    check("「保存…」の窓に「マニュアルの素材」の .zip が出て、初めは外れている", z && z.getAttribute("aria-checked") === "false" && !z.disabled, norm(z?.textContent));
+    check("zip の説明に絵の枚数", norm(z?.textContent).includes("場面ごとの画面の絵 4 枚"), norm(z?.textContent));
+    await chooseFormats(dlg, ["md", "zip"]);
+    await snap(sc, "save-dialog-zip");
+    check("保存（.md と zip）", (await confirmSave(dlg, L)) === "saved", lastSaveToast);
+    const stem = sc.recording.split("/").pop().replace(/\.[^.]+$/, "");
+    const folder = folderOf(sc.recording);
+    const zipPath = `${folder}/${stem}_マニュアル素材.zip`;
+    const mdPath = `${folder}/${savedStem(sc.recording)}.md`;
+    check("zip と .md を元のファイルと同じフォルダに保存", (await invoke("dev_exists", { path: zipPath })) && (await invoke("dev_exists", { path: mdPath })), `${lastSaveToast}`);
+    check("知らせは 2 件", savedCount(lastSaveToast) === 2, lastSaveToast);
+
+    // zip だけ・同じ名前 → 上書きの確かめ
+    dlg = await openSaveDialog(L);
+    z = zipRow(dlg);
+    check("もう一度開くと zip は外れている（覚えない）・形式は前のまま", z?.getAttribute("aria-checked") === "false" && JSON.stringify(dialogFormats(dlg).filter(([f]) => f !== "zip")) === JSON.stringify([["md", true], ["txt", false], ["json", false]]), JSON.stringify(dialogFormats(dlg)));
+    await chooseFormats(dlg, ["zip"]);
+    const r = await confirmSave(dlg, L);
+    check("zip だけでも保存でき、同じ名前があれば上書きを確かめる", r === "dialog" && bodyText().includes(`${stem}_マニュアル素材.zip`), r);
+    check("上書きして保存", (await overwriteAndWait(L)) === "saved" && savedCount(lastSaveToast) === 1, lastSaveToast);
+    dlg = await openSaveDialog(L);
+    check("zip だけを保存したあとも、覚えている形式は .md のまま", JSON.stringify(dialogFormats(dlg).filter(([f]) => f !== "zip")) === JSON.stringify([["md", true], ["txt", false], ["json", false]]), JSON.stringify(dialogFormats(dlg)));
+    escape();
+    await sleep(200);
+    info(`zip の中身は scripts/e2e_mac.sh が確かめる: ${zipPath}`);
+  }
+
   // ---- 実録音（中身は出さず、時間と件数だけ） ------------------------------------------------
 
   async function realScenario(sc) {
@@ -1330,6 +1395,7 @@
     } else if (sc.name === "setup") await setupScenario();
     else if (sc.name === "en") await enScenario(sc);
     else if (sc.name === "photo") await photoScenario(sc);
+    else if (sc.name === "screens") await screensScenario(sc);
     else if (sc.name === "real") await realScenario(sc);
     else if (sc.name === "history1") return await history1(sc);
     else if (sc.name === "history2") await history2(sc);

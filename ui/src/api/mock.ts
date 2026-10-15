@@ -15,6 +15,7 @@ import type {
   NamedSpeakers,
   Names,
   SaveResult,
+  ScreensInfo,
   SpeakerCard,
   TalkTime,
   TranscriptView,
@@ -128,6 +129,12 @@ function joinPath(dir: string, name: string): string {
 let locale: Locale = "ja";
 /** 版12: 保存するファイルの名前（拡張子なし）。「<元ファイルの名前>_文字起こし」（英語の画面では「_transcript」） */
 const savedStem = (path: string) => `${stemOf(baseName(path))}_${locale === "en" ? "transcript" : "文字起こし"}`;
+
+/** 版13: マニュアルの素材の zip の名前 */
+const zipNameOf = (path: string) => `${stemOf(baseName(path))}_${locale === "en" ? "manual_materials" : "マニュアル素材"}.zip`;
+/** 版13: マニュアル用にした録音（鍵）。見本の数（作り物の画面共有の録画をアプリで通したときと同じ） */
+const screensKeys = new Set<string>();
+const MOCK_SCREENS: ScreensInfo = { frames: 5, scenes: 3, steps: 1, faces: 0 };
 
 /** 版12: 保存先の既定は元ファイルと同じフォルダ（版11までは隣の「<名前>_文字起こし/」） */
 function outDirFor(path: string): string {
@@ -368,6 +375,7 @@ function jobDone(j: MockJob) {
     unresolvedCount: t.unresolved.length,
     ...(names && Object.keys(names).length ? { names: { ...names } } : {}),
     ...(draft ? { draft: structuredClone(draft) } : {}),
+    ...(screensKeys.has(j.key) ? { screens: { ...MOCK_SCREENS } } : {}),
   });
 }
 
@@ -486,6 +494,7 @@ function opened(item: HistoryItem, sourceAvailable: boolean): HistoryOpened {
     unresolvedCount: baseTranscript().unresolved.length,
     ...(names && Object.keys(names).length ? { names: { ...names } } : {}),
     ...(draft ? { draft: structuredClone(draft) } : {}),
+    ...(screensKeys.has(key) ? { screens: { ...MOCK_SCREENS } } : {}),
     sourceAvailable,
   };
 }
@@ -553,6 +562,9 @@ export const mockApi: KikiwakeApi = {
     }
     const base = supportedBase();
     const info: FileInfo = { ...base, name, path };
+    // 版13: 録画（mp4・mov）は映像ありにして、マニュアル用にする場合の目安を付ける（エンジンと同じ係数）
+    info.hasVideo = ext === "mp4" || ext === "mov";
+    delete info.estimateScreens;
     const key = freshKeyOf(path);
     const reusable = scenario.file === "previous" || diarizationDone.has(key);
     const resultReusable = transcriptDone.has(key);
@@ -569,10 +581,17 @@ export const mockApi: KikiwakeApi = {
       // 版6: 前回の書き起こしを使い回すときは数秒（エンジンと同じ）
       if (resultReusable) info.estimate = { minSec: 1, maxSec: 10 };
     } else delete info.previous;
+    if (info.hasVideo) {
+      const d = info.durationSec;
+      info.estimateScreens = {
+        minSec: Math.max(info.estimate.minSec, Math.round(d * 0.03)),
+        maxSec: Math.max(info.estimate.maxSec, Math.round(d * 0.1)) + 5,
+      };
+    }
     return info;
   },
 
-  async startJob({ path }) {
+  async startJob({ path, screens }) {
     await wait(120);
     if (job) {
       job.running = false;
@@ -585,6 +604,7 @@ export const mockApi: KikiwakeApi = {
       pathGen.set(pathKey(path), (pathGen.get(pathKey(path)) ?? 0) + 1);
     }
     const key = keyOfPath(path);
+    if (screens) screensKeys.add(key);
     const reused = scenario.file === "previous" || diarizationDone.has(key);
     const j: MockJob = { id: `job-mock-${++jobSeq}`, path, key, timers: [], running: true, diarizationKept: reused };
     job = j;
@@ -666,6 +686,8 @@ export const mockApi: KikiwakeApi = {
     // 版12: 録音の名前入り（名前を付けたかどうかでは変えない）。選んだフォルダにそのまま書く
     const path = jobPaths.get(jobId) ?? history.find((h) => h.jobId === jobId)?.path ?? scenarioFilePath();
     const files = req.formats.map((f) => joinPath(req.dir, `${savedStem(path)}.${f}`));
+    // 版13: マニュアルの素材の zip
+    if (req.screens) files.push(joinPath(req.dir, zipNameOf(path)));
     const existing = files.filter((f) => scenario.save === "existing" || savedFiles.has(pathKey(f)));
     if (existing.length && !req.overwrite) return { files: [], existing };
     files.forEach((f) => savedFiles.add(pathKey(f)));

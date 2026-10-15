@@ -11,6 +11,8 @@
 //!     kikiwake-dev repeats <turns.json|-> <ojf.json>…  繰り返しの検出（本文は出さない。範囲・回数・話していた秒数だけ）
 //!     kikiwake-dev save <dir>…                        版3の保存（dir の edits.json の手直しを当てて dir/saved/ に md・txt・json）
 //!     kikiwake-dev save-en <dir>…                     版7の英語の保存（同じく dir/saved_en/ に。日本語の save は変えない）
+//!     kikiwake-dev screens <scan.bin> [config.json]   画面の絵の判定（decode-avf frames-scan の結果から screens.json を標準出力に。
+//!                                                     config.json で数値を変えて試せる。区間の一覧は標準エラーに）
 
 use std::fs;
 use std::process::ExitCode;
@@ -244,9 +246,37 @@ fn cmd_repeats(turns: &str, files: &[String]) {
     }
 }
 
+fn cmd_screens(scan: &str, config: Option<&String>) {
+    use kikiwake_core::screens::{self, Scan, ScreensConfig};
+    let scan = Scan::from_bytes(&fs::read(scan).expect("scan")).expect("scan の形");
+    let cfg: ScreensConfig = config.map(|c| serde_json::from_str(&fs::read_to_string(c).unwrap()).expect("config")).unwrap_or_default();
+    let t = std::time::Instant::now();
+    let sc = screens::analyze(&scan, &cfg);
+    eprintln!("{} 枚・{:.2} 秒", scan.frames.len(), t.elapsed().as_secs_f64());
+    for s in &sc.spans {
+        eprintln!(
+            "{:>3} {:<6} {:>7.1}〜{:<7.1} 絵 {:<8} {}{}{}{}",
+            s.id,
+            format!("{:?}", s.kind),
+            s.start,
+            s.end,
+            s.frame_t.map(|t| format!("{t:.0}")).unwrap_or("-".into()),
+            s.same_as.map(|i| format!("同じ={i} ")).unwrap_or_default(),
+            if s.transient { "一時的 " } else { "" },
+            if s.faces { "顔? " } else { "" },
+            s.changed.map(|r| format!("変化 {:.2},{:.2} {:.2}x{:.2} ", r.x, r.y, r.w, r.h)).unwrap_or_default()
+                + &s.crop.map(|r| format!("絵 {:.3},{:.3} {:.3}x{:.3} ", r.x, r.y, r.w, r.h)).unwrap_or_default()
+                + &s.masks.iter().map(|r| format!("塗る {:.2},{:.2} {:.2}x{:.2}", r.x, r.y, r.w, r.h)).collect::<Vec<_>>().join(" "),
+        );
+    }
+    eprintln!("{}", serde_json::to_string(&sc.summary).unwrap());
+    println!("{}", serde_json::to_string_pretty(&sc).unwrap());
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        Some("screens") => cmd_screens(&args[1], args.get(2)),
         Some("pycompat") => cmd_pycompat(&args[1], &args[2]),
         Some("merge") => cmd_merge(&args[1..]),
         Some("speakers") => cmd_speakers(&args[1..]),

@@ -101,6 +101,18 @@ impl AppError {
         )
     }
 
+    /// 版13: マニュアルの素材の絵を取り出せない（映像が無い・画面の共有が見つからない・映像を読めない）
+    pub fn screens_unavailable() -> Self {
+        Self::new("screens_unavailable", "この録画からは、画面の絵を取り出せませんでした（画面の共有が見つからない・映像を読めない）。")
+    }
+    /// 版13: マニュアルの素材を作るには元の録画が要る（行の再生と同じく、移したり書き換えたりしたら作れない）
+    pub fn screens_source_missing() -> Self {
+        Self::new(
+            "screens_source_missing",
+            "マニュアルの素材を作るには、元の録画が要ります。元の録画を移したり消したりしていないか確かめてください。",
+        )
+    }
+
     pub fn is_cancelled(&self) -> bool {
         self.code == "cancelled"
     }
@@ -151,6 +163,8 @@ mod tests {
             AppError::not_same_recording(),
             AppError::not_writable(),
             AppError::save_failed(),
+            AppError::screens_unavailable(),
+            AppError::screens_source_missing(),
         ];
         for e in ours {
             assert_eq!(fixture[&e.code]["message"], e.message, "{}", e.code);

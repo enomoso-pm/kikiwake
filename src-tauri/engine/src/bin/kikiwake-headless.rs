@@ -6,10 +6,10 @@
 //!   kikiwake-headless models
 //!   kikiwake-headless download [whisper-large-v3 nemotron-3-diarization]   （取り終えるまで待つ）
 //!   kikiwake-headless inspect <録音>
-//!   kikiwake-headless run <録音> [--cancel-after <秒>]                         （処理が終わるまで待つ）
+//!   kikiwake-headless run <録音> [--cancel-after <秒>] [--screens]             （処理が終わるまで待つ。--screens はマニュアル用に画面の絵も）
 //!   kikiwake-headless speakers <ID> | hints <ID> | transcript <ID> [--named]
 //!   kikiwake-headless names <ID> <names.json>
-//!   kikiwake-headless save <ID> <保存先> [md,txt,json] [--overwrite] [--edits <edits.json>]
+//!   kikiwake-headless save <ID> <保存先> [md,txt,json|none] [--overwrite] [--edits <edits.json>] [--screens]   （--screens はマニュアルの素材の zip も）
 //!   kikiwake-headless clip <ID> <開始秒> <終了秒>
 //!   kikiwake-headless notices <whisper の -ojf JSON> <話者区間の JSON> <録音の長さ（秒）>   （繰り返しの知らせの判定。時刻と秒数だけ出す）
 //!
@@ -94,7 +94,8 @@ fn main() -> ExitCode {
         }
         "inspect" => out(files::inspect_file(&engine, Path::new(&a(1)))),
         "run" => {
-            let started = match engine.start_job(Path::new(&a(1))) {
+            let screens = args.iter().any(|x| x == "--screens");
+            let started = match engine.start_job_with(Path::new(&a(1)), screens) {
                 Ok(s) => s,
                 Err(e) => return out::<()>(Err(e)),
             };
@@ -122,7 +123,13 @@ fn main() -> ExitCode {
             let formats = formats.split(',').filter_map(|f| serde_json::from_value(json!(f)).ok()).collect();
             let edits = args.iter().position(|x| x == "--edits").and_then(|i| args.get(i + 1))
                 .and_then(|p| kikiwake_core::merge::load_json(Path::new(p)).ok());
-            let req = SaveRequest { dir: a(2), formats, edits, overwrite: Some(args.iter().any(|x| x == "--overwrite")) };
+            let req = SaveRequest {
+                dir: a(2),
+                formats,
+                edits,
+                overwrite: Some(args.iter().any(|x| x == "--overwrite")),
+                screens: Some(args.iter().any(|x| x == "--screens")),
+            };
             out(results::save_outputs(&engine, &a(1), &req))
         }
         "clip" => out(results::recording_clip(&engine, &a(1), a(2).parse().unwrap_or(0.0), a(3).parse().unwrap_or(0.0))),

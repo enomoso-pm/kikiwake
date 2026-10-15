@@ -205,6 +205,8 @@ impl Drop for KeepAwake {
 struct Running {
     id: String,
     cancel: Arc<Cancel>,
+    /// 版13: マニュアルの素材の画面の読み取り（文字起こしと同時に別のエンジンを動かすので、中止の合図を分ける。Cancel は1つのプロセスしか止めない）
+    scan_cancel: Arc<Cancel>,
     thread: Option<JoinHandle<()>>,
     /// 終わり（完了・失敗）を知らせた。あとはスレッドが片付けて抜けるだけ
     ending: Arc<AtomicBool>,
@@ -233,6 +235,9 @@ struct Ctx<'a> {
     job: JobDir,
     source: PathBuf,
     cancel: Arc<Cancel>,
+    scan_cancel: Arc<Cancel>,
+    /// 版13: マニュアル用に、画面の絵も取り出す
+    screens: bool,
     t0: Instant,
     reused: bool,
     last_emit: Mutex<Option<Instant>>,
@@ -276,6 +281,11 @@ impl Engine {
 
     /// 処理を始める（別のスレッドで進め、途中経過・終わり・失敗はイベントで知らせる）。同時に動かすのは1本だけ
     pub fn start_job(self: &Arc<Self>, path: &Path) -> Result<JobStarted, AppError> {
+        self.start_job_with(path, false)
+    }
+
+    /// 版13: screens なら、マニュアル用に画面の絵も取り出す（文字起こしと同時に。screens.rs）
+    pub fn start_job_with(self: &Arc<Self>, path: &Path, screens: bool) -> Result<JobStarted, AppError> {
         let (id, src) = identify(path)?;
         let mut slot = self.job.lock().unwrap();
         if let Some(r) = slot.as_mut() {
@@ -304,13 +314,18 @@ impl Engine {
             src.duration_sec = old.duration_sec;
         }
         write_json(&job.file("source.json"), &src)?;
+        if screens {
+            crate::screens::mark_wanted(&job);
+        }
         let out_dir = default_out_dir(Path::new(&src.path)).display().to_string();
         let cancel = Arc::new(Cancel::new());
+        let scan_cancel = Arc::new(Cancel::new());
         let ending = Arc::new(AtomicBool::new(false));
         let me = Arc::clone(self);
-        let (c2, e2, j2, source) = (Arc::clone(&cancel), Arc::clone(&ending), job.clone(), PathBuf::from(&src.path));
-        let thread = std::thread::spawn(move || me.run(j2, source, c2, e2));
-        *slot = Some(Running { id: id.clone(), cancel, thread: Some(thread), ending });
+        let (c2, s2, e2, j2, source) =
+            (Arc::clone(&cancel), Arc::clone(&scan_cancel), Arc::clone(&ending), job.clone(), PathBuf::from(&src.path));
+        let thread = std::thread::spawn(move || me.run(j2, source, c2, s2, e2, screens));
+        *slot = Some(Running { id: id.clone(), cancel, scan_cancel, thread: Some(thread), ending });
         Ok(JobStarted { job_id: id, out_dir })
     }
 
@@ -319,6 +334,7 @@ impl Engine {
         if let Some(r) = self.job.lock().unwrap().as_ref() {
             if r.id == job_id {
                 r.cancel.cancel();
+                r.scan_cancel.cancel();
             }
         }
     }
@@ -327,6 +343,7 @@ impl Engine {
     pub fn shutdown(&self) {
         if let Some(r) = self.job.lock().unwrap().as_ref() {
             r.cancel.cancel();
+            r.scan_cancel.cancel();
         }
         if let Some(c) = self.download.lock().unwrap().as_ref() {
             c.cancel();
@@ -416,9 +433,19 @@ impl Engine {
         }
     }
 
-    fn run(&self, job: JobDir, source: PathBuf, cancel: Arc<Cancel>, ending: Arc<AtomicBool>) {
+    fn run(&self, job: JobDir, source: PathBuf, cancel: Arc<Cancel>, scan_cancel: Arc<Cancel>, ending: Arc<AtomicBool>, screens: bool) {
         let _awake = KeepAwake::start();
-        let ctx = Ctx { engine: self, job, source, cancel, t0: Instant::now(), reused: false, last_emit: Mutex::new(None) };
+        let ctx = Ctx {
+            engine: self,
+            job,
+            source,
+            cancel,
+            scan_cancel: Arc::clone(&scan_cancel),
+            screens,
+            t0: Instant::now(),
+            reused: false,
+            last_emit: Mutex::new(None),
+        };
         // 録音の名前と場所はログに書かない（形式と大きさだけ。ログを Issue に貼ってもよいように）
         let ext = ctx.source.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
         let mb = fs::metadata(&ctx.source).map(|m| m.len() as f64 / 1e6).unwrap_or(0.0);
@@ -432,6 +459,8 @@ impl Engine {
                 self.events.job_done(&done);
             }
             Err((job, e)) => {
+                // 文字起こしが止まったら、同時に動いている画面の読み取りも止める
+                scan_cancel.cancel();
                 let kept = job.diarization().is_file();
                 let error = if e.is_cancelled() { AppError::cancelled(kept) } else { e };
                 set_status(&job, if error.is_cancelled() { "cancelled" } else { "failed" });
@@ -454,6 +483,18 @@ impl Engine {
         }
         let paths = &self.paths;
         let audio = ctx.job.audio();
+
+        // 0. マニュアル用なら、画面の絵の読み取りを別のスレッドで始める（文字起こしと同時に。前の判定がそのまま使えれば読まない）。
+        // 失敗しても文字起こしは続ける（screens_error.json に残し、画面に出す）
+        let wanted = ctx.screens || crate::screens::wanted(&ctx.job);
+        let scan = (wanted && !crate::screens::reusable(&ctx.job)).then(|| {
+            let (p, j, s, c) = (paths.clone(), ctx.job.clone(), ctx.source.clone(), Arc::clone(&ctx.scan_cancel));
+            ctx.log("画面の読み取りを始めた");
+            std::thread::spawn(move || {
+                let t = Instant::now();
+                (crate::screens::run(&p, &j, &s, &c), t.elapsed().as_secs_f64())
+            })
+        });
 
         // 1. 音声の取り出し（前回の WAV があれば使う）
         ctx.emit(Stage::Extract, None, None, true);
@@ -550,6 +591,20 @@ impl Engine {
 
         // 4. 突き合わせ（画面向けの一式を作業フォルダに作る。組み立ては core の kikiwake-dev screen と同じ）
         ctx.emit(Stage::Merge, None, Some(merge_estimate(duration)), true);
+        // マニュアル用なら、画面の読み取りが終わるのを待つ（ふつうは文字起こしより先に終わっている）
+        if let Some(h) = scan {
+            match h.join() {
+                Ok((Ok(i), sec)) => ctx.log(&format!(
+                    "画面の読み取り {sec:.1} 秒・絵 {}・場面 {}・変化 {}・顔かも {}",
+                    i.frames, i.scenes, i.steps, i.faces
+                )),
+                Ok((Err(e), _)) => ctx.log(&format!("画面の読み取りに失敗 {e}")),
+                Err(_) => ctx.log("画面の読み取りが止まった"),
+            }
+            if ctx.cancel.is_cancelled() {
+                return Err((ctx.job.clone(), AppError::cancelled(true)));
+            }
+        }
         let repeats = repeat::find_repeats(&segs);
         for r in &repeats {
             ctx.log(&format!("繰り返しを検出: {}", repeat::describe(r)));
@@ -579,6 +634,8 @@ impl Engine {
             names: crate::results::names_of(&ctx.job),
             // 版8: 閉じたときの状態（書き起こしが変わっていなければ）
             draft: crate::history::load_draft(&ctx.job),
+            // 版13: マニュアル用にした録音の、画面の絵の数
+            screens: crate::screens::info(&ctx.job),
         };
         Ok((ctx, done))
     }
@@ -907,7 +964,13 @@ impl Engine {
             let _ = rx.recv();
         });
         *self.job.lock().unwrap() =
-            Some(Running { id: id.into(), cancel: Arc::new(Cancel::new()), thread: Some(thread), ending: Arc::new(AtomicBool::new(ending)) });
+            Some(Running {
+                id: id.into(),
+                cancel: Arc::new(Cancel::new()),
+                scan_cancel: Arc::new(Cancel::new()),
+                thread: Some(thread),
+                ending: Arc::new(AtomicBool::new(ending)),
+            });
         tx
     }
 }

@@ -131,6 +131,13 @@ export function ProcessingScreen({ onRetry }: { onRetry: () => void }) {
           ))}
         </div>
 
+        {/* 版13: マニュアル用に始めた録音 */}
+        {running && job.screens ? (
+          <div className="band-info pretty" style={{ padding: "12px 18px", fontSize: 13, lineHeight: 1.7 }}>
+            {t.processing.screensNote}
+          </div>
+        ) : null}
+
         {job.status === "failed" && job.error ? (
           <div
             className="band-error"

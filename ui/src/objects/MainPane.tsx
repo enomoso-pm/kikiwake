@@ -35,14 +35,16 @@ function SaveHost() {
   const open = useApp((s) => s.dialog === "save");
   const sourceDir = useApp((s) => s.job?.outDir ?? "");
   const sourcePath = useApp((s) => s.job?.path ?? "");
+  const screens = useApp((s) => s.screens);
   if (!open) return null;
   const sourceGone = Boolean(sourceDir && sourcePath) && !samePath(sourceDir, dirname(sourcePath));
   return (
     <SaveDialog
       sourceDir={sourceDir}
       sourceGone={sourceGone}
+      screens={screens}
       onCancel={closeSaveDialog}
-      onSave={(dir, formats) => void saveCurrent(dir, formats)}
+      onSave={(dir, formats, zip) => void saveCurrent(dir, formats, zip)}
     />
   );
 }
@@ -169,8 +171,10 @@ function ChangedFileNotice() {
 }
 
 function startFromFile(): void {
-  const f = getState().file;
-  if (f) startOrEnqueue(f.path, { name: f.name, durationSec: f.durationSec });
+  const s = getState();
+  const f = s.file;
+  // 版13: 録画で「マニュアル用に、画面の絵も取り出す」にチェックを入れていれば
+  if (f) startOrEnqueue(f.path, { name: f.name, durationSec: f.durationSec, ...(s.screensOn && f.hasVideo ? { screens: true } : {}) });
 }
 
 export function MainPane() {

@@ -90,6 +90,9 @@ pub struct FileInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsupported: Option<AppError>,
     pub estimate: Estimate,
+    /// 版13: 録画（映像あり）のとき、「マニュアル用に、画面の絵も取り出す」を選んだ場合の所要時間の目安（全段階の合計）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate_screens: Option<Estimate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previous: Option<Previous>,
     /// 版9: 同じ場所の録音を前に文字起こししていて、そのあとファイルが変わった（大きさか更新日時が違う。新しい録音として扱う）
@@ -156,6 +159,9 @@ pub struct JobDone {
     /// 版8: 閉じたときの状態（画面が saveDraft で渡したもの。中身は画面が決める）。書き起こしが変わっていれば省く
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft: Option<serde_json::Value>,
+    /// 版13: マニュアル用にした録音の、画面の絵の数（保存の窓に「マニュアルの素材（.zip）」を出す）。マニュアル用にしていなければ省く
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screens: Option<crate::screens::ScreensInfo>,
 }
 
 // ---- 履歴（版8） ---------------------------------------------------------------------
@@ -271,6 +277,9 @@ pub struct SaveRequest {
     pub edits: Option<kikiwake_core::lines::LineEdits>,
     #[serde(default)]
     pub overwrite: Option<bool>,
+    /// 版13: マニュアルの素材の zip も保存する（「<元の名前>_マニュアル素材.zip」）。formats が空でもよい（zip だけ）
+    #[serde(default)]
+    pub screens: Option<bool>,
 }
 
 /// 処理の流れから画面へ知らせる（Tauri のイベント・画面なしのコマンドの出力）

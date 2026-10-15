@@ -2,7 +2,7 @@
 # 画面（ui/）を本物のエンジンで自動で通す（Phase 2 手順5）。開発用のビルドにだけ入る操作役（src-tauri/dev/*.js・src-tauri/src/dev.rs）を使う。
 # 画面は製品と同じビルド（ui/ の npm run build）。ui/ のファイルは触らない。
 #
-#   bash scripts/e2e_mac.sh [boot|setup|synth|history|en|photo|real]...  既定は synth。SKIP_BUILD=1 でビルドを飛ばす
+#   bash scripts/e2e_mac.sh [boot|setup|synth|history|en|photo|real|screens]...  既定は synth。SKIP_BUILD=1 でビルドを飛ばす
 #   BUNDLE=1 なら .app の形の開発用ビルド（target/debug/bundle/macos/Kikiwake.app）で動かす。Info.plist で決まること
 #   （対応する言語の宣言で、macOS が足すメニューの項目などの言語が変わる）はこちらでないと確かめられない。
 #   識別子がいつもの Kikiwake と同じなので、WebKit の保存（覚えた画面の言語）もいつもの Kikiwake と同じ所になる
@@ -18,6 +18,8 @@
 #            行の「…」の「削除…」・再開）
 #     en     英語（約束 版7）: 英語の Mac のまね（-AppleLanguages (en-US)。この Mac の設定は変えない）で合成会議を通し、
 #            メニュー・画面・保存するファイル（名前と中身）が英語か、日本語に切り替えると日本語になるか、英語がはみ出さないか
+#     screens マニュアルの素材（約束 版13）: 作り物の画面共有の録画（合成会議の声。scripts/make_screens_video.sh。ffmpeg が要る）で
+#            「マニュアル用に、画面の絵も取り出す」→ 保存の .zip。終わったら zip の中身（ファイル・timeline の区間・小窓が黒いか）をここで確かめる
 #
 # 作業フォルダは ~/Library/Caches/Kikiwake-dev/phase2/e2e/<筋書き>/（毎回まっさらにする）。snap/*.json は見た目の記録（手順5-3）。
 # アプリのデータ（この Mac の速さの記録・覚えた画面の言語）も作業フォルダの中に分け、いつもの Kikiwake に混ぜない。
@@ -68,6 +70,8 @@ elif name in ("history1", "history2"):
     fx = f"{root}/contract/fixtures"
     sc.update(recording=rec, recording2=rec.replace(".wav", "_2.wav"), recording3=rec.replace(".wav", "_3.wav"), recording4=rec.replace(".wav", "_4.wav"),
               fixtures=fx, cacheDir=f"{work}/cache", saveDir=f"{work}/out", timeoutMin=10, names=json.load(open(f"{fx}/names.json", encoding="utf-8")))
+elif name == "screens":
+    sc.update(recording=rec, timeoutMin=10)
 elif name == "real":
     sc.update(recording=rec, quiet=True, timeoutMin=45, reopen=os.environ.get("REOPEN") == "1")
     sc.pop("snapDir")
@@ -131,6 +135,13 @@ for sc in "${@:-synth}"; do
       # このアプリだけ英語の Mac のまね（macOS の引数。Mac の設定は変えない）
       APP_ARGS=(-AppleLanguages "(en-US)")
       ;;
+    screens)
+      VID="$DEV/screens/screens_demo.mp4"
+      mkdir -p "$DEV/screens"
+      [ -f "$VID" ] || bash "$ROOT/scripts/make_screens_video.sh" "$SYNTH" "$VID" >/dev/null
+      REC="$WORK/rec/画面共有デモ.mp4"
+      cp "$VID" "$REC"
+      ;;
     real)
       REC="${KIKIWAKE_REAL_SAMPLE:?KIKIWAKE_REAL_SAMPLE に実録音のパスを入れる}"
       LIMIT=3600
@@ -163,6 +174,43 @@ for sc in "${@:-synth}"; do
     sleep 0.5
     echo "== $phase 終了コード $code"
     [ "$code" = 0 ] || { status=1; break; }
+    # マニュアルの素材: 保存した zip の中身（ファイル・timeline の区間・右下の小窓が黒く、地は黒くない・transcript.md が保存した .md と同じ）
+    if [ "$sc" = screens ]; then
+      python3 - "$WORK/rec" <<'PYCHECK' || { status=1; break; }
+import glob, os, subprocess, sys, zipfile
+rec = sys.argv[1]
+ng = 0
+def check(name, ok, detail=""):
+    global ng
+    ng += 0 if ok else 1
+    print(f"[画面] {'OK' if ok else 'NG'} {name}{('　' + detail) if detail else ''}", flush=True)
+zips = glob.glob(os.path.join(rec, "*_マニュアル素材.zip"))
+check("zip が 1 つ", len(zips) == 1, str(zips))
+z = zipfile.ZipFile(zips[0])
+names = z.namelist()
+want = ["README.md", "timeline.md", "timeline.json", "transcript.md"] + [f"frames/{i:04d}.jpg" for i in range(1, 5)]
+check("zip の中身", names == want, str(names))
+check("zip の検査（CRC）", z.testzip() is None)
+tl = z.read("timeline.md").decode()
+for part in ["## 1. カメラの時間", "一時的な表示", "前と同じ画面", "画面の中の変化", "![2](frames/0001.jpg)", "変わった所：右"]:
+    check(f"timeline に「{part}」", part in tl)
+md = glob.glob(os.path.join(rec, "*_文字起こし.md"))
+check("transcript.md が保存した .md と同じ", len(md) == 1 and z.read("transcript.md") == open(md[0], "rb").read())
+readme = z.read("README.md").decode()
+check("README は「読み方」と「書き方」", "この zip の読み方" in readme and "マニュアルの書き方" in readme)
+check("スクロールは次の場面にまとめ、動きの多い時間は無い", "動きの多い時間" not in tl)
+tmp = os.path.join(rec, "frame1.jpg")
+open(tmp, "wb").write(z.read("frames/0001.jpg"))
+def px(x, y):
+    # JPEG は色の間引きがあるので、白黒にしてから 1 画素を切り出す（そのままでは ffmpeg が 1 画素に切れない）
+    out = subprocess.run(["ffmpeg", "-v", "error", "-i", tmp, "-vf", f"format=gray,crop=1:1:{x}:{y}", "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+    return out[0] if out else -1
+check("右下の小窓（カメラの代わり）は黒く塗っている", 0 <= px(1270, 710) < 16, str(px(1270, 710)))
+check("地は塗っていない", px(40, 40) > 200, str(px(40, 40)))
+os.remove(tmp)
+sys.exit(1 if ng else 0)
+PYCHECK
+    fi
   done
 done
 exit "$status"

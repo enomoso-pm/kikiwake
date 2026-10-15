@@ -15,6 +15,8 @@
 - 文字起こしを確かめ、行ごとの名前や文字を直してから保存する（.md・.txt・.json）
 - 左の録音の一覧で、文字起こし中・順番待ち・前に文字起こしした録音を行き来する（文字起こしを待つ間も、ほかの録音を開ける）
 - 4 時間ほどの長い録音でも、メモリを使いすぎずに最後まで文字起こしする
+- 画面共有の録画から、マニュアルの素材（場面ごとの画面の絵と、その間の発言をまとめた zip）を書き出す。AI に渡して手順書を書かせるための説明（README.md）入り。
+  会議アプリの参加者の枠は見分けられたときに外し、カメラに映った人は黒く塗る
 - 画面は日本語と英語（Mac の言語に合わせて始まり、窓の右上で切り替えられる。保存するファイルの見出しなども画面の言語で）。文字起こしできるのは、今は日本語の録音だけ
 
 | 新しい録音 | 文字起こし |
@@ -61,12 +63,19 @@
 一覧の行の右上の「…」から、保存したファイルを Finder で表示したり、要らなくなった録音を削除したりできます（削除しても、元のファイルと保存したファイルは消えません）。途中で中断した録音は「再開する」で続きから文字起こしできます。
 元のファイルを移したり、書き換えたりしたときは、録音の上に帯が出て、選び直す・結び直すことができます。
 
+**マニュアルの素材**: 画面共有の録画（.mp4・.mov）を選んだときは、「文字起こしをはじめる」の前に「マニュアル用に、画面の絵も取り出す」にチェックを入れると、文字起こしと同時に画面を読み取ります（2 時間半の録画で約 2 分）。
+保存の窓で「マニュアルの素材」の「.zip」にチェックを入れると、「〈元の名前〉_マニュアル素材.zip」を保存します。中身は、場面ごとの画面の絵（frames/）、区間ごとの絵と発言（timeline.md）、文字起こし（transcript.md）、AI への説明（README.md）です。
+AI（Claude など）にこの zip を渡し、「README.md を読んで、その手順でマニュアルを作って」と頼んでください。zip を受け付けるかは、AI のサービスと設定によります。
+絵は共有した画面の部分だけを切り出し（会議アプリの参加者の枠は、見分けられたときに外します）、カメラに映った人は黒く塗ります。それでも、画面に映っていたほかの情報（通知・メール・お客さまの情報など）や、見分けられなかった参加者の名前が残ることがあります。渡す前に zip の中の frames を確かめてください。
+前に文字起こしした録画も、「新しい録音」から選び直してチェックを入れれば、文字起こしは使い回して画面だけを読み取ります。
+
 **新しい版**: 起動したときに新しい版を確かめ、あれば新しい録音の画面に知らせます。自動では入れ替えません。「内容と手順を見る」で、更新内容と入れ替えかたを確かめてください。確かめるのをやめるときは、一覧の下の「AI モデルと動作条件」で「起動したときに新しい版を確かめる」を外します。
 
 ## 音声と文字の扱い
 
 - 文字起こしはすべてこの Mac の中で行います。音声も文字も外に送りません。使い方の送信（テレメトリ）もありません
 - インターネットを使うのは、初回の AI モデルのダウンロード（huggingface.co）と、起動したときの新しい版の確認（GitHub）だけです。新しい版の確認は、最新の版の番号を尋ねるだけで、録音や文字は送りません（GitHub には、この Mac の IP アドレスと Kikiwake の版の番号が伝わります。「AI モデルと動作条件」で止められます）
+- マニュアルの素材の zip は、保存の窓で選んだときにだけ作ります。マニュアル用にした録画では、画面の読み取りの結果（場面の区切りの時刻など。数十 KB）を作業用のファイルに置き、絵は保存のときに元の録画から取り出します
 - 作業用のファイル（録音の一覧）は `~/Library/Application Support/Kikiwake/jobs/` に置きます（1 時間の録音で約 8MB）。使い終えた録音から取り出した音声は、別の録音を始めたときとアプリを終えるときに消します。文字起こし・名前・手直しは、一覧の「…」から削除するまで残ります。元の録音・録画と、保存したファイルには触りません
 - ログ（`~/Library/Logs/Kikiwake/kikiwake.log`）には、文字起こしの段階・時刻・エラーと、新しい版の確認の結果だけを書きます。文字起こしの中身と、録音の名前・場所は書きません
 - 会議などを録音するときは、話す人の了承を得てください
@@ -99,6 +108,7 @@
 | 話者の判定 | [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) と Nemotron 3 Diarization（自作の `kikiwake-diar` で少しずつ流し込む） |
 | 書き起こし | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) と Whisper large-v3（GPU は Metal） |
 | 突き合わせ・名前の手がかり・保存 | Rust（`core/`） |
+| 画面の読み取り（マニュアルの素材） | macOS の AVFoundation・Vision（`decode-avf`）と Rust（`core/`。場面の区切り・参加者の枠の切り出し） |
 | 画面と外枠 | [Tauri 2](https://tauri.app/)・React・TypeScript |
 
 架空の 4 人会議（約 2 分 40 秒）での精度: 話者の誤り率（DER）12.7%、文字の誤り率 2.8%、話者の正解率 94%。
@@ -123,6 +133,7 @@ Everything runs locally on your Mac: no audio or text is sent anywhere, and ther
 - **Language:** The app is available in **Japanese and English**. It starts in your Mac's language, and you can switch at the top right of the window. Saved transcripts follow the app's language. Transcription currently supports **Japanese recordings only**.
 - **Requirements:** Apple silicon Mac, macOS 14 or later, 16 GB of memory recommended, about 4 GB of free disk space.
 - **Recordings list:** The list on the left shows recordings being transcribed, queued, and done, each with a status (Transcribing, Queued, Stopped, Not saved yet, Saved, Edited since saving). You can open another recording while one is being transcribed. Reopening returns you to where you left off, including names you were typing and text you edited (even if you didn't save a file). Stopped recordings can be resumed. Removing a recording from the list deletes only Kikiwake's working data, not your recording or saved transcripts.
+- **Materials for a manual:** For a screen-sharing recording (.mp4 or .mov), check “Also take screen images for a manual” before starting. When saving, check the `.zip` under “Materials for a manual” to save a zip with an image of each scene, the remarks made during it, the transcript, and a README that tells an AI (such as Claude) how to write a step-by-step manual from them. The images are cut down to the shared screen (the meeting app's participant panel is removed when it can be told apart) and people on camera are blacked out; other things that were on screen may remain, so check the images before you share the zip. Whether an AI service accepts a zip depends on the service and its settings.
 - **Install:** Download the `.dmg` from [Releases](https://github.com/enomoso-pm/kikiwake/releases) and drag Kikiwake to Applications. The app is not notarized by Apple, so on first launch go to System Settings → Privacy & Security and click "Open Anyway" (macOS 15 or later; the “設定を開く” (Open Settings) icon in the `.dmg` opens that screen). Step-by-step instructions are in `Read Me First.txt` in the `.dmg`.
 - **Built with:** whisper.cpp (Whisper large-v3), NeMo-Speech.cpp (Nemotron 3 Diarization), Tauri, React, and Rust.
 - **License:** MIT. See [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) for third-party licenses.

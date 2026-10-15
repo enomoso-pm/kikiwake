@@ -23,6 +23,8 @@ import { mergeOrder, samePath, type Entry, type QueueItem } from "./model";
 export interface Meta {
   name: string;
   durationSec: number;
+  /** 版13: マニュアル用に、画面の絵も取り出す（新しい録音の画面のチェック） */
+  screens?: boolean;
 }
 
 /** 一覧で選んでいるが、画面の状態には読み込んでいない録音（途中の録音・順番待ち） */
@@ -109,8 +111,9 @@ function sameJob(a: JobView, b: JobView): boolean {
   return a.jobId && b.jobId ? a.jobId === b.jobId : samePath(a.path, b.path);
 }
 
-function newJobView(path: string): JobView {
+function newJobView(path: string, screens?: boolean): JobView {
   return {
+    screens: Boolean(screens),
     jobId: null,
     path,
     outDir: "",
@@ -205,14 +208,14 @@ async function startNext(): Promise<void> {
   if (viewing) {
     set({ peek: null });
     setState({ playable: true, relinkError: null, file: null });
-    void startJob(next.path);
+    void startJob(next.path, next.screens);
     return;
   }
-  const job = newJobView(next.path);
+  const job = newJobView(next.path, next.screens);
   early.length = 0;
   set({ running: job });
   try {
-    const started = await api.startJob({ path: next.path });
+    const started = await api.startJob({ path: next.path, ...(next.screens ? { screens: true } : {}) });
     const r = get().running;
     if (r !== job && !(r && r.jobId === null && samePath(r.path, next.path))) return;
     set({ running: { ...(r ?? job), jobId: started.jobId, outDir: started.outDir } });
@@ -239,7 +242,7 @@ export function startOrEnqueue(path: string, meta: Meta): void {
   }
   set({ peek: null, runningMeta: meta, notice: null });
   setState({ playable: true, relinkError: null });
-  void startJob(path);
+  void startJob(path, meta.screens);
 }
 
 export function enqueue(path: string, meta: Meta, select = true): void {
@@ -371,8 +374,8 @@ export async function confirmDelete(): Promise<void> {
  * 保存（「話者」「文字起こし」のどちらのタブの下からでも）。「保存…」の窓で選んだ保存先と形式で（2026-09-29）、
  * 入れた名前がまだ確定していなければ、確定してから保存する。名前を付けていなければ「話者A」などのまま保存する（2026-09-27 決定）
  */
-export async function saveCurrent(dir: string, formats: SaveFormat[]): Promise<void> {
-  applySaveChoice(dir, formats);
+export async function saveCurrent(dir: string, formats: SaveFormat[], zip = false): Promise<void> {
+  applySaveChoice(dir, formats, zip);
   if (needsApply(getState()) && !(await applyNamesAndShow(false))) return;
   await save();
 }

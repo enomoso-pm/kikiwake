@@ -9,6 +9,7 @@ import type {
   ModelInfo,
   Names,
   SaveFormat,
+  ScreensInfo,
   SpeakerCard,
   Stage,
   TranscriptView,
@@ -47,6 +48,8 @@ export interface JobView {
   error: AppError | null;
   diarizationKept: boolean;
   cancelRequested: boolean;
+  /** 版13: マニュアル用に、画面の絵も取り出している（始めたときに選んだ。処理中の画面に一文を出す） */
+  screens?: boolean;
 }
 
 export interface NameMenuState {
@@ -83,6 +86,8 @@ export interface AppState {
   fileBusy: boolean;
   dragOver: boolean;
   startError: AppError | null;
+  /** 版13: 選んだ録画で「マニュアル用に、画面の絵も取り出す」にチェックを入れている（ファイルを選び直すと外れる） */
+  screensOn: boolean;
 
   // 履歴（版8）
   /** 一覧。読む前は null */
@@ -146,6 +151,10 @@ export interface AppState {
   /** 最後に保存したときの手直し（名前と手直しを文字にしたもの）。保存していない手直しがあるかを比べる */
   savedEdits: string | null;
   detailOpen: boolean;
+  /** 版13: マニュアル用にした録音の画面の絵の数（JobDone.screens）。マニュアル用にしていなければ null */
+  screens: ScreensInfo | null;
+  /** 版13: 「保存…」の窓で「マニュアルの素材（.zip）」を選んだ（この保存だけ。覚えない） */
+  saveZip: boolean;
 }
 
 /** 「名無し」を表示する人の鍵にするときの値 */
@@ -175,6 +184,8 @@ export const resultInitial = (): Pick<
   | "overwrite"
   | "savedEdits"
   | "detailOpen"
+  | "screens"
+  | "saveZip"
 > => ({
   view: null,
   appliedNames: {},
@@ -198,6 +209,8 @@ export const resultInitial = (): Pick<
   overwrite: null,
   savedEdits: null,
   detailOpen: false,
+  screens: null,
+  saveZip: false,
 });
 
 export const useApp = create<AppState>()(() => ({
@@ -221,6 +234,7 @@ export const useApp = create<AppState>()(() => ({
   fileBusy: false,
   dragOver: false,
   startError: null,
+  screensOn: false,
 
   history: null,
   historyError: null,

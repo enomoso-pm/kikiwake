@@ -5,7 +5,7 @@ import { ErrorBand } from "../components/ErrorBand";
 import { UpdateBand } from "../components/UpdateBand";
 import { useT } from "../i18n";
 import { fileFormatLabel, formatClock, formatEstimate, formatFileSize, formatMonthDay } from "../lib/format";
-import { clearFile, pickFile, setDragOver } from "../store/file";
+import { clearFile, pickFile, setDragOver, setScreensOn } from "../store/file";
 import { useApp } from "../store/state";
 
 function DropZone() {
@@ -67,8 +67,11 @@ export function FileScreen({ runningName, start, notice }: FileScreenProps) {
   const file = useApp((s) => s.file);
   const fileError = useApp((s) => s.fileError);
   const startError = useApp((s) => s.startError);
+  const screensOn = useApp((s) => s.screensOn);
 
   const previousDay = file?.previous?.diarizationReusable ? formatMonthDay(file.previous.processedAt) : null;
+  // 版13: マニュアル用にするときの所要時間の目安（画面の読み取りは文字起こしと同時に進める）
+  const screensEstimate = screensOn && file?.hasVideo ? file.estimateScreens : undefined;
 
   return (
     <div className="page-scroll">
@@ -123,12 +126,35 @@ export function FileScreen({ runningName, start, notice }: FileScreenProps) {
               </div>
             ) : null}
 
+            {/* 版13: 録画（映像あり）のときだけ。初めは外れている（2026-10-12 決定） */}
+            {file.hasVideo ? (
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={screensOn}
+                className={`card screens-option${screensOn ? " on" : ""}`}
+                onClick={() => setScreensOn(!screensOn)}
+              >
+                <span className="check-box">{screensOn ? "✓" : ""}</span>
+                <span style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{t.file.screens}</span>
+                  <span className="pretty" style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.7 }}>
+                    {t.file.screensHint}
+                  </span>
+                </span>
+              </button>
+            ) : null}
+
             <div className="card" style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "14px 18px" }}>
               <span className="nowrap" style={{ fontSize: 13, color: "var(--ink-3)" }}>
                 {t.file.estimate}
               </span>
               <strong className="num" style={{ fontSize: 15, fontWeight: 600 }}>
-                {file.previous?.resultReusable ? t.file.soon : formatEstimate(file.estimate.minSec, file.estimate.maxSec)}
+                {screensEstimate
+                  ? formatEstimate(screensEstimate.minSec, screensEstimate.maxSec)
+                  : file.previous?.resultReusable
+                    ? t.file.soon
+                    : formatEstimate(file.estimate.minSec, file.estimate.maxSec)}
               </strong>
             </div>
 

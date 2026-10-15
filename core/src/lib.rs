@@ -12,6 +12,7 @@ pub mod patterns;
 pub mod pycompat;
 pub mod pyjson;
 pub mod repeat;
+pub mod screens;
 pub mod speakers;
 pub mod unresolved;
 pub mod view;

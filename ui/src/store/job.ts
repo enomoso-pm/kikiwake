@@ -34,7 +34,8 @@ export function diarizationDone(j: JobView): boolean {
   return j.reused || stageIndex(j.stage) > stageIndex("diarize");
 }
 
-export async function startJob(path?: string): Promise<void> {
+/** 版13: screens なら、マニュアル用に画面の絵も取り出す（省くと、前にマニュアル用で始めた録音の続きならエンジンが続ける） */
+export async function startJob(path?: string, screens?: boolean): Promise<void> {
   const s = getState();
   const target = path ?? s.file?.path;
   if (!target) return;
@@ -55,11 +56,12 @@ export async function startJob(path?: string): Promise<void> {
     error: null,
     diarizationKept: false,
     cancelRequested: false,
+    screens: Boolean(screens),
   };
   setState({ job, dialog: null, startError: null });
   goTo("processing");
   try {
-    const started = await api.startJob({ path: target });
+    const started = await api.startJob({ path: target, ...(screens ? { screens: true } : {}) });
     if (my !== startSeq) return;
     setState((st) => (st.job ? { job: { ...st.job, jobId: started.jobId, outDir: started.outDir } } : {}));
     const pending = early.splice(0).filter((e) => e.jobId === started.jobId);
@@ -95,7 +97,7 @@ export function onJobDone(d: JobDone): void {
     closeJobDialogs();
     // 処理した録音は元ファイルがあるので行を再生できる。版8: 閉じたときの状態があれば、閉じたときの画面へ
     setState({ playable: true, relinkError: null });
-    void enterNaming(d.jobId, d.names, d.draft);
+    void enterNaming(d.jobId, d.names, d.draft, false, false, d.screens);
   });
 }
 

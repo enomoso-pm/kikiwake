@@ -13,6 +13,7 @@ use kikiwake_core::{pyjson, wav};
 
 use crate::error::{io_error, save_error, AppError};
 use crate::job::{saved_stem, Engine, JobDir};
+use crate::screens;
 use crate::types::{RepeatNotice, SaveRequest, TranscriptOut};
 
 fn load<T: serde::de::DeserializeOwned>(job: &JobDir, name: &str) -> Result<T, AppError> {
@@ -89,20 +90,43 @@ pub fn get_transcript(engine: &Engine, job_id: &str, named: bool) -> Result<Tran
 
 /// 手直しを当てて保存する。同じ名前のファイルがあれば、overwrite でない限り書かずに existing を返す。
 /// 中の言葉は画面の言語（約束 版7。英語なら見出し・確認用の欄・「Speaker A」を英語に）。
-/// ファイルの名前は録音の名前入り（約束 版12。中身は core が作る Python 版と同じもので、名前だけ付け替える）
+/// ファイルの名前は録音の名前入り（約束 版12。中身は core が作る Python 版と同じもので、名前だけ付け替える）。
+/// 版13: screens ならマニュアルの素材の zip も（「<元の名前>_マニュアル素材.zip」。formats が空なら zip だけ）。
+/// zip が作れない（元の録画が無い など）ときは、何も書かずにエラーを返す
 pub fn save_outputs(engine: &Engine, job_id: &str, req: &SaveRequest) -> Result<SaveResult, AppError> {
     let job = JobDir::open(&engine.paths, job_id)?;
     let p = parts(&job)?;
     let names = names_of(&job);
     let edits = req.edits.clone().unwrap_or_default();
-    let formats: Vec<SaveFormat> = if req.formats.is_empty() { vec![SaveFormat::Md] } else { req.formats.clone() };
+    let zip = req.screens.unwrap_or(false);
+    let formats: Vec<SaveFormat> = if req.formats.is_empty() && !zip { vec![SaveFormat::Md] } else { req.formats.clone() };
     let lang = engine.locale();
-    let stem = saved_stem(Path::new(&job.source()?.path), lang);
+    let source = PathBuf::from(&job.source()?.path);
+    let stem = saved_stem(&source, lang);
     let files: Vec<(String, String)> = lines::save_files(&p.words, &p.turns, names.as_ref(), &edits, &p.meta, &formats, lang)
         .into_iter()
         .map(|(name, body)| (renamed(&name, &stem), body))
         .collect();
-    lines::write_files(Path::new(&req.dir), &files, req.overwrite.unwrap_or(false)).map_err(|e| save_error(&e, &req.dir))
+    let dir = Path::new(&req.dir);
+    let zip_path = zip.then(|| dir.join(screens::zip_name(&source, lang)));
+    if !req.overwrite.unwrap_or(false) {
+        let mut existing: Vec<String> =
+            files.iter().map(|(n, _)| dir.join(n)).filter(|p| p.exists()).map(|p| p.display().to_string()).collect();
+        existing.extend(zip_path.iter().filter(|z| z.exists()).map(|z| z.display().to_string()));
+        if !existing.is_empty() {
+            return Ok(SaveResult { files: Vec::new(), existing });
+        }
+    }
+    if zip {
+        screens::check_ready(&job)?;
+    }
+    let mut res = lines::write_files(dir, &files, true).map_err(|e| save_error(&e, &req.dir))?;
+    if let Some(z) = zip_path {
+        let zp = screens::ZipParts { words: &p.words, turns: &p.turns, names: names.as_ref(), edits: &edits, meta: &p.meta };
+        screens::write_zip(&engine.paths, &job, &zp, lang, &z)?;
+        res.files.push(z.display().to_string());
+    }
+    Ok(res)
 }
 
 /// 「transcript_named.md」→「<stem>.md」（拡張子はそのまま）

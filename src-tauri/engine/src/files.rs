@@ -19,6 +19,16 @@ pub fn estimate(engine: &Engine, duration: f64) -> Estimate {
     Estimate { min_sec: (duration * 0.2 * scale).round() as u64, max_sec: (duration * 0.4 * scale).round() as u64 }
 }
 
+/// 版13: マニュアル用に画面の絵も取り出すときの所要時間の目安（全段階の合計）。画面の読み取りは文字起こしと同時に進め、
+/// 録画の長さの 0.03〜0.1 倍ほど（720p の作り物の録画で 0.033 倍。1080p はその 2 倍ほどの見込み。実物の録画で測って直す）。
+/// 文字起こしを使い回すとき（数秒で終わる）は、読み取りの時間がそのまま目安になる
+pub fn estimate_screens(base: &Estimate, duration: f64) -> Estimate {
+    Estimate {
+        min_sec: base.min_sec.max((duration * 0.03).round() as u64),
+        max_sec: base.max_sec.max((duration * 0.1).round() as u64) + 5,
+    }
+}
+
 pub fn inspect_file(engine: &Engine, path: &Path) -> Result<FileInfo, AppError> {
     let (id, src) = identify(path)?;
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -32,6 +42,7 @@ pub fn inspect_file(engine: &Engine, path: &Path) -> Result<FileInfo, AppError> 
         supported: false,
         unsupported: None,
         estimate: Estimate { min_sec: 0, max_sec: 0 },
+        estimate_screens: None,
         previous: None,
         previous_changed: None,
     };
@@ -73,6 +84,9 @@ pub fn inspect_file(engine: &Engine, path: &Path) -> Result<FileInfo, AppError> 
     }
     if fi.previous.is_none() {
         fi.previous_changed = previous_changed(&engine.paths, &id, &src.path);
+    }
+    if fi.has_video {
+        fi.estimate_screens = Some(estimate_screens(&fi.estimate, fi.duration_sec));
     }
     Ok(fi)
 }

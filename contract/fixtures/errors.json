@@ -54,5 +54,13 @@
  "save_failed": {
   "code": "save_failed",
   "message": "保存できませんでした。保存先を確かめて、もう一度保存してください。続く場合は詳細をコピーして連絡してください。"
+ },
+ "screens_unavailable": {
+  "code": "screens_unavailable",
+  "message": "この録画からは、画面の絵を取り出せませんでした（画面の共有が見つからない・映像を読めない）。"
+ },
+ "screens_source_missing": {
+  "code": "screens_source_missing",
+  "message": "マニュアルの素材を作るには、元の録画が要ります。元の録画を移したり消したりしていないか確かめてください。"
  }
 }

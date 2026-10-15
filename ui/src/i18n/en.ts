@@ -27,6 +27,8 @@ const ERRORS: Record<string, string> = {
   not_same_recording: "The file you chose differs from this recording in size or length. Choose the original recording.",
   not_writable: "Can't save to this folder (you don't have permission to write to it). Click “Save…” and choose another folder.",
   save_failed: "Couldn't save. Check the save location and try again. If it keeps happening, copy the details and let us know.",
+  screens_unavailable: "Couldn't take screen images from this recording (no screen sharing found, or the video can't be read).",
+  screens_source_missing: "The original recording is needed to make the manual materials. Check that it hasn't been moved or deleted.",
 };
 
 /** 動作条件の表示文（エンジンの文そのものから） */
@@ -132,6 +134,9 @@ export const en: Messages = {
     estimate: "Estimated time",
     soon: "Just a few seconds",
     start: "Start transcription",
+    screens: "Also take screen images for a manual",
+    screensHint:
+      "Takes an image of each scene from a screen-sharing recording. When you save, you can write a zip with the transcript, the images, and instructions for an AI. People on camera are blacked out.",
   },
 
   /** Recording-first layout (2026-09-27): the list of recordings on the left, the chosen recording on the right. Same shape as ja.ts */
@@ -257,6 +262,7 @@ export const en: Messages = {
     kept: "The voice separation results were kept. Resuming uses them and starts from converting speech to text.",
     notKept: "Voice separation hadn't finished yet. Resuming starts from the beginning.",
     local: "Transcription happens only on this computer.",
+    screensNote: "Also taking screen images for a manual (alongside the transcription).",
     cancel: "Stop",
     retry: "Resume",
   },
@@ -372,6 +378,11 @@ export const en: Messages = {
     } as Record<string, string>,
     cancel: "Cancel",
     save: "Save",
+    zipTitle: "Materials for a manual",
+    zipHint: (frames: number) => `${frames} screen image${frames === 1 ? "" : "s"}, the transcript, and instructions for an AI`,
+    zipFaces: (n: number) => `${n} image${n === 1 ? " may" : "s may"} show a face. Check before you share.`,
+    zipNone: "No screen sharing was found, so this can't be made",
+    zipError: "The recording couldn't be read, so this can't be made",
     savedToast: (file: string, more: number) => (more > 0 ? `Saved “${file}” and ${more} more` : `Saved “${file}”`),
   },
 

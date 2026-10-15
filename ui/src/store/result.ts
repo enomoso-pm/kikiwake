@@ -241,12 +241,16 @@ export function closeSaveDialog(): void {
   setState((s) => (s.dialog === "save" ? { dialog: null } : {}));
 }
 
-/** 窓で選んだ形式と保存先を、この録音の保存に使う（保存は store の save。名前の確定を挟むので呼ぶ側で） */
-export function applySaveChoice(dir: string, formats: readonly SaveFormat[]): void {
+/**
+ * 窓で選んだ形式と保存先を、この録音の保存に使う（保存は store の save。名前の確定を挟むので呼ぶ側で）。
+ * 版13: zip（マニュアルの素材）はこの保存だけ（覚えない）
+ */
+export function applySaveChoice(dir: string, formats: readonly SaveFormat[], zip = false): void {
   setState({
     dialog: null,
     outDir: dir,
     formats: { md: formats.includes("md"), txt: formats.includes("txt"), json: formats.includes("json") },
+    saveZip: zip,
   });
 }
 
@@ -254,7 +258,8 @@ export async function save(overwrite = false): Promise<void> {
   const s = getState();
   const jobId = s.job?.jobId;
   const formats = (["md", "txt", "json"] as const).filter((f) => s.formats[f]);
-  if (!jobId || s.saving || !formats.length) return;
+  const zip = s.saveZip && Boolean(s.screens?.frames);
+  if (!jobId || s.saving || (!formats.length && !zip)) return;
   setState({ saving: true, saveError: null, dialog: null, overwrite: null });
   try {
     const res = await api.saveOutputs(jobId, {
@@ -262,6 +267,7 @@ export async function save(overwrite = false): Promise<void> {
       formats: [...formats],
       edits: buildEdits(rowsOf(s)),
       ...(overwrite ? { overwrite: true } : {}),
+      ...(zip ? { screens: true } : {}),
     });
     if (res.existing?.length && !overwrite) {
       setState({ saving: false, overwrite: res.existing, dialog: "overwrite" });

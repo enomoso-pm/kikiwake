@@ -1,4 +1,4 @@
-Kikiwake 1.0.0 — 使っているもののライセンス（Third-party notices）
+Kikiwake 1.1.0 — 使っているもののライセンス（Third-party notices）
 
 Kikiwake 自体は MIT ライセンス（同じフォルダの LICENSE）。Kikiwake is licensed under the MIT License.
 このファイルには、配る .app に組み込まれている他の人の作ったものと、そのライセンスの全文を載せる。

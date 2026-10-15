@@ -41,7 +41,8 @@ export const tauriApi: KikiwakeApi = {
   inspectFile: (path) => invoke("inspect_file", { path }),
 
   // ---- 画面3 処理中 ----
-  startJob: (req) => invoke("start_job", { path: req.path }),
+  // 版13: screens（マニュアル用に、画面の絵も取り出す）
+  startJob: (req) => invoke("start_job", { path: req.path, screens: req.screens ?? false }),
   cancelJob: (jobId) => invoke("cancel_job", { jobId }),
   onJobProgress: (cb) => on("job-progress", cb),
   onJobDone: (cb) => on("job-done", cb),

@@ -14,9 +14,11 @@ pub mod models;
 pub mod paths;
 pub mod proc;
 pub mod results;
+pub mod screens;
 pub mod tidy;
 pub mod types;
 pub mod update;
+pub mod zip;
 
 pub use error::AppError;
 pub use job::Engine;

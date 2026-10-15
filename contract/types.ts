@@ -1,6 +1,6 @@
 // Kikiwake 画面 ⇄ エンジンの受け渡しの約束（データの形）。ここが正。
 // 変更したら contract/README.md の履歴に書く。
-// 版 12（2026-09-29）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
+// 版 13（2026-10-12）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
 // 書き起こしは正確さ優先（Whisper large-v3）だけ。版1にあった品質の選択（速さ優先）は無くした。
 
 /**
@@ -67,6 +67,11 @@ export interface FileInfo {
   unsupported?: AppError; // supported=false のときの理由
   /** 所要時間の目安（全段階の合計、秒）。Phase 0 の実測で係数を決める */
   estimate: { minSec: number; maxSec: number };
+  /**
+   * 版13で追加。録画（hasVideo）のとき、「マニュアル用に、画面の絵も取り出す」を選んだ場合の所要時間の目安（全段階の合計、秒）。
+   * 画面の読み取りは文字起こしと同時に進める。映像が無ければ省略
+   */
+  estimateScreens?: { minSec: number; maxSec: number };
   /** 同じファイルの前回の結果（中止を含む）があるとき。話者判定の結果はやり直しで使い回す */
   previous?: {
     outDir: string;
@@ -128,6 +133,27 @@ export interface JobDone {
   names?: Names;
   /** 版8で追加。閉じたときの状態（saveDraft で渡したもの）。書き起こしが変わっていれば（行の id が合わないので）省略 */
   draft?: JobDraft;
+  /** 版13で追加。マニュアル用にした録音（startJob の screens）の、画面の絵の数。マニュアル用にしていなければ省略 */
+  screens?: ScreensInfo;
+}
+
+/**
+ * 版13で追加（2026-10-12 決定）。マニュアルの素材: 画面共有の録画から取り出した画面の絵の数。
+ * 保存の窓に「マニュアルの素材（.zip）」を出すかに使う（frames が 0・error があれば、出しても選べない）。
+ * zip の中身は README.md（AI への頼みごと）・timeline.md / timeline.json（区間ごとの絵と、その間の発言）・transcript.md（保存する .md と同じ）・frames/*.jpg。
+ * 絵の中のカメラ（動いている顔・端で動き続ける小窓）は黒く塗る
+ */
+export interface ScreensInfo {
+  /** 絵の枚数（zip に入る）。0 なら画面の共有が見つからなかった（zip は作れない） */
+  frames: number;
+  /** 場面の切り替わりの数 */
+  scenes: number;
+  /** 画面の中の変化の数 */
+  steps: number;
+  /** 顔が写っているかもしれない絵の数（写真の顔など。黒く塗った所の外で顔が見つかった） */
+  faces: number;
+  /** 録画を読み取れなかった（映像が無い・読めない）。文字起こしは続けている */
+  error?: AppError;
 }
 
 export interface JobFailed {
@@ -289,6 +315,12 @@ export interface SaveRequest {
   edits?: LineEdits; // 版3で追加
   /** 版3で追加。保存先に同じ名前のファイルがあっても上書きする（利用者が確かめたあとに true で呼び直す） */
   overwrite?: boolean;
+  /**
+   * 版13で追加。マニュアルの素材の zip も保存する（「<元の名前>_マニュアル素材.zip」。英語の画面では「_manual_materials.zip」）。
+   * formats が空でもよい（zip だけ）。絵は元の録画から取り出すので、元の録画が無ければ screens_source_missing（何も書かない）。
+   * 同じ名前の zip があれば、ほかのファイルと同じく existing で返す
+   */
+  screens?: boolean;
 }
 
 export interface SaveResult {
@@ -435,7 +467,9 @@ export type ErrorCode =
   | "cancelled"
   | "not_same_recording" // 版8: 履歴の「ファイルを選び直す」で、大きさか長さが元の録音と違う
   | "not_writable" // 版11: 保存先のフォルダに書き込めない（書き込む許可が無い・読み取り専用のディスク）
-  | "save_failed"; // 版11: そのほかの理由で保存できない（空き容量が無いときは disk_full）
+  | "save_failed" // 版11: そのほかの理由で保存できない（空き容量が無いときは disk_full）
+  | "screens_unavailable" // 版13: マニュアルの素材の絵を取り出せない（映像が無い・画面の共有が見つからない・映像を読めない）
+  | "screens_source_missing"; // 版13: マニュアルの素材を作るには元の録画が要る（移した・書き換えた）
 
 export interface AppError {
   code: ErrorCode;

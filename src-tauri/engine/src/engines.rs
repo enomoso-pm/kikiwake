@@ -1,5 +1,5 @@
 //! 同梱した3つのエンジンの呼び出し。
-//!   decode-avf    音声の取り出し（AVFoundation）と、ファイルの確認
+//!   decode-avf    音声の取り出し（AVFoundation）と、ファイルの確認。版13 からマニュアルの素材の画面の絵（読み取りと書き出し）も
 //!   kikiwake-diar 話者判定（NeMo-Speech.cpp の C の呼び出し口に WAV を少しずつ流し込む。4.5 時間でもメモリ 0.21GB）
 //!   whisper-cli   書き起こし（whisper.cpp。Phase 0 で決めた設定。-mc 0 は必須）
 use std::ffi::OsStr;
@@ -76,6 +76,24 @@ pub fn decode(paths: &Paths, src: &Path, dst: &Path, cancel: &Cancel) -> Result<
         return Err(decode_error(&f));
     }
     out.trim().parse().map_err(|_| AppError::engine_failed().with_detail(format!("decode-avf の出力: {out}")))
+}
+
+/// マニュアルの素材: 1 秒に 1 枚、小さな升の明るさと顔の位置を dst に書く（形は core の screens::SCAN_MAGIC）
+pub fn frames_scan(paths: &Paths, src: &Path, dst: &Path, cancel: &Cancel) -> Result<(), AppError> {
+    let args = [OsStr::new("frames-scan"), src.as_os_str(), dst.as_os_str()];
+    let f = check("decode-avf", proc::run(&paths.engine("decode-avf")?, &args, cancel, |_| {}, |_| {}))?;
+    match f.status.code() {
+        Some(0) => Ok(()),
+        Some(5) => Err(AppError::screens_unavailable().with_detail(f.detail("decode-avf frames-scan"))),
+        _ => Err(decode_error(&f)),
+    }
+}
+
+/// マニュアルの素材: 指示（spec.json の時刻・書き出す場所・黒く塗る四角）どおりに絵を PNG に書く
+pub fn frames_export(paths: &Paths, src: &Path, spec: &Path, cancel: &Cancel) -> Result<(), AppError> {
+    let args = [OsStr::new("frames-export"), src.as_os_str(), spec.as_os_str()];
+    let f = check("decode-avf", proc::run(&paths.engine("decode-avf")?, &args, cancel, |_| {}, |_| {}))?;
+    if f.status.success() { Ok(()) } else { Err(decode_error(&f)) }
 }
 
 // ---- kikiwake-diar -------------------------------------------------------------------

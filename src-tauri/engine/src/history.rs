@@ -248,6 +248,7 @@ pub fn open_history(engine: &Engine, job_id: &str) -> Result<HistoryOpened, AppE
             unresolved_count,
             names: names_of(&job),
             draft: load_draft(&job),
+            screens: crate::screens::info(&job),
         },
         source_available: available,
     })

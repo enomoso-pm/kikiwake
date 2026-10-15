@@ -18,7 +18,7 @@ export async function inspectPath(path: string): Promise<void> {
     const info = await api.inspectFile(path);
     if (my !== inspectSeq) return;
     if (!info.supported) setState({ file: null, fileError: info.unsupported ?? UNSUPPORTED_FALLBACK, fileBusy: false });
-    else setState({ file: info, fileError: null, fileBusy: false });
+    else setState({ file: info, fileError: null, fileBusy: false, screensOn: false });
   } catch (e) {
     if (my !== inspectSeq) return;
     setState({ file: null, fileError: toAppError(e), fileBusy: false });
@@ -60,5 +60,10 @@ export function setDragOver(over: boolean): void {
 
 export function clearFile(): void {
   inspectSeq++;
-  setState({ file: null, fileError: null, startError: null, fileBusy: false });
+  setState({ file: null, fileError: null, startError: null, fileBusy: false, screensOn: false });
+}
+
+/** 版13: 「マニュアル用に、画面の絵も取り出す」（録画のときだけ出す） */
+export function setScreensOn(on: boolean): void {
+  setState({ screensOn: on });
 }

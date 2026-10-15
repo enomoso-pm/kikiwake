@@ -120,8 +120,9 @@ async fn inspect_file(state: State<'_, AppState>, path: String) -> R<FileInfo> {
 // ---- 画面3 処理中 ----
 
 #[tauri::command]
-async fn start_job(state: State<'_, AppState>, path: String) -> R<JobStarted> {
-    state.engine.start_job(Path::new(&path))
+async fn start_job(state: State<'_, AppState>, path: String, screens: Option<bool>) -> R<JobStarted> {
+    // 版13: screens なら、マニュアル用に画面の絵も取り出す
+    state.engine.start_job_with(Path::new(&path), screens.unwrap_or(false))
 }
 
 #[tauri::command]

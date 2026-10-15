@@ -8,6 +8,8 @@ export interface QueueItem {
   path: string;
   name: string;
   durationSec: number;
+  /** 版13: マニュアル用に、画面の絵も取り出す */
+  screens?: boolean;
 }
 
 export type Entry =

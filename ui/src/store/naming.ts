@@ -1,5 +1,5 @@
 // 画面4 名前付け（UI 画面仕様書 §7）
-import type { JobDraft, Names, TranscriptView } from "@contract/types";
+import type { JobDraft, Names, ScreensInfo, TranscriptView } from "@contract/types";
 import { api } from "../api";
 import { stateFromDraft } from "../lib/draft";
 import { toAppError } from "../lib/errors";
@@ -21,7 +21,14 @@ let openedNames: Names = {};
  * 文字起こしの中身は、どちらのタブで開くときも読み込む（2026-09-27 に直した: 話者のタブで開くと読み込んでいなかったので、
  * 保存したあとの手直しを数えられず、閉じたときの状態に「手直しなし」と書き直して、一覧の印が「保存後に手直し」から「保存済み」に戻っていた）
  */
-export async function enterNaming(jobId: string, previousNames?: Names, draft?: JobDraft, immediate = false, savedBefore = false): Promise<void> {
+export async function enterNaming(
+  jobId: string,
+  previousNames?: Names,
+  draft?: JobDraft,
+  immediate = false,
+  savedBefore = false,
+  screens?: ScreensInfo,
+): Promise<void> {
   const t0 = Date.now();
   const applied: Names = previousNames ? { ...previousNames } : {};
   openedNames = { ...applied };
@@ -50,6 +57,7 @@ export async function enterNaming(jobId: string, previousNames?: Names, draft?: 
       appliedNames: applied,
       ...(draft ? stateFromDraft(draft) : {}),
       ...(savedBefore ? { savedOnce: true } : {}),
+      screens: screens ?? null,
       screen: toResult ? "result" : "naming",
       editing: null,
       nameMenu: null,

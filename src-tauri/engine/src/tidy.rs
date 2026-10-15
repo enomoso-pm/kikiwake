@@ -16,8 +16,9 @@ use std::time::SystemTime;
 
 use crate::paths::Paths;
 
-/// 使い終えた録音から消すもの（作業フォルダの中の名前）
-const HEAVY: [&str; 3] = ["audio.wav", "audio.part.wav", "clips"];
+/// 使い終えた録音から消すもの（作業フォルダの中の名前）。マニュアルの素材の読み取りの途中のデータと書き出し途中の絵も（版13。
+/// ふつうは使い終えたときに消えている。処理中に落ちたときの残り）
+const HEAVY: [&str; 5] = ["audio.wav", "audio.part.wav", "clips", crate::screens::SCAN, crate::screens::EXPORT];
 
 /// 掃除の結果（ログ用）
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

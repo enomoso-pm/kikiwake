@@ -53,7 +53,7 @@ export async function openHistoryItem(item: HistoryItem): Promise<void> {
         cancelRequested: false,
       },
     });
-    await enterNaming(o.jobId, o.names, o.draft, true, item.saved);
+    await enterNaming(o.jobId, o.names, o.draft, true, item.saved, o.screens);
   } catch (e) {
     setState({ historyError: toAppError(e) });
   } finally {

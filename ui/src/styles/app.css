@@ -501,6 +501,52 @@ textarea::placeholder {
   color: var(--ink-3);
 }
 
+/* 版13: マニュアルの素材（.zip）。マニュアル用にした録音だけ。画面の共有が見つからない・読めないときは選べない */
+.save-format:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.save-format:disabled:hover {
+  background: transparent;
+}
+
+.save-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--warn-ink);
+}
+
+/* 版13: 新しい録音の「マニュアル用に、画面の絵も取り出す」（録画のときだけ。初めは外れている） */
+.screens-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.screens-option .check-box {
+  margin-top: 3px;
+}
+
+.screens-option:hover {
+  background: var(--accent-hover2);
+}
+
+.screens-option.on {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.screens-option.on .check-box {
+  border: none;
+  background: var(--accent);
+}
+
 .save-folder {
   width: 100%;
   height: 36px;

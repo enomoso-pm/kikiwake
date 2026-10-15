@@ -298,6 +298,13 @@ pub fn save_files(
         .collect()
 }
 
+/// 保存するファイルと同じ発言（手直しを当て、同じ名前の隣り合う行を1行にまとめたもの。確認用も含む）。
+/// マニュアルの素材の timeline で、区間ごとに発言を並べるのに使う（screens.rs）
+pub fn saved_utterances(words: &[Word], turns: &[Turn], names: Option<&Names>, edits: &LineEdits) -> Vec<Utterance> {
+    let rows = lines(words, turns, names);
+    merge_rows(&edited(&rows, edits), 1.5, 90.0)
+}
+
 /// 保存先に書く。同じ名前のファイルがあり overwrite でないときは、何も書かずにその一覧を返す（画面が確かめる）。
 pub fn write_files(dir: &Path, files: &[(String, String)], overwrite: bool) -> io::Result<SaveResult> {
     let paths: Vec<std::path::PathBuf> = files.iter().map(|(n, _)| dir.join(n)).collect();
