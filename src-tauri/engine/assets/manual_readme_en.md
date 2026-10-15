@@ -33,6 +33,8 @@ To keep the number of images down, these times are merged into a neighboring sec
 - While the screen kept moving (scrolling, an AI reply or a page streaming in, etc.) → into the settled screen that follows
 - Small changes that moved on to the next screen within 5 seconds → into the next section
 - Small changes in the same place one after another (typing into the same field, etc.) → into the section of the last screen ("What changed" covers the whole merged area)
+- Changes smaller than 2% of the screen (the mouse pointer moving, the selected cell moving, a hover color, etc.) → not split into a section of their own; they stay part of the same screen.
+  Such actions have no image of their own. When the remarks describe one, check the result in the image of the same section (its last screen)
 
 ### Notes for reading
 

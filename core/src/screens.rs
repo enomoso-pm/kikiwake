@@ -13,7 +13,10 @@
 //!      小窓は長く動き続けるものだけにした）
 //!   3. カメラの四角が画面の 30% 以上（または動き続ける所が画面の半分以上）が 5 秒続く時間は「カメラの時間」（絵を出さない）
 //!   4. 共有の時間を「状態」（画面が落ち着いている間のひとまとまり）に区切る。カメラの四角と 4 升以下の小さなかたまり（マウスの矢印など）は見ない。
-//!      基準の絵と 10 升以上違い、そのあと 2 秒静かなら新しい状態。変わった所を囲む四角が画面の半分以上なら場面の切り替わり、それ未満は画面の中の変化
+//!      基準の絵と、見ている画面の 2%（少なくとも 10 升）以上違い、そのあと 2 秒静かなら新しい状態。変わった所を囲む四角が画面の半分以上なら
+//!      場面の切り替わり、それ未満は画面の中の変化。
+//!      （2026-10-15: 10 升だけでは、マウスの矢印の移動・表で選んだセルが 1 行動いた・マウスを乗せて色が変わった、で別の画面になっていた。
+//!      基準の絵と比べるので、動くだけの変化は積み重ならず、入力のように足されていく変化は積み重なって 2% を超えた所で新しい状態になる）
 //!   5. 前に出てきた状態と同じなら「前と同じ」（絵を出さない）、8 秒以内に元へ戻った表示は「一時的な表示」（通知などの中身を出さない）、
 //!      10 秒以上落ち着かない時間は「動きの多い時間」（真ん中の 1 枚）
 //!   6. 状態の絵は最後の 1 枚（変わる直前。読み込みが終わり、次に押すボタンの上に矢印が乗っていることが多い）。カメラの四角は黒く塗る。
@@ -151,8 +154,11 @@ pub struct ScreensConfig {
     pub switch_sec: usize,
     /// これ以下の升目のかたまりは見ない（マウスの矢印・文字のカーソル）
     pub small_blob: usize,
-    /// 基準の絵とこの升目以上違えば、画面が変わった
+    /// 基準の絵とこの升目以上違えば、画面が変わった（下の state_part と大きいほう）
     pub state_cells: usize,
+    /// 基準の絵と、見ている画面（切り出した四角の中。切らないときは画面全体）のこの割合以上違えば、画面が変わった。
+    /// 未満なら同じ画面の続き（マウスの矢印の移動・表で選んだセルの移動・マウスを乗せた色の変化など。2026-10-15 決定）
+    pub state_part: f64,
     /// 変わったあと、この秒数静かなら新しい状態
     pub settle_sec: usize,
     /// 変わった所を囲む四角がこの割合以上なら、場面の切り替わり（未満は画面の中の変化）
@@ -224,6 +230,7 @@ impl Default for ScreensConfig {
             switch_sec: 5,
             small_blob: 4,
             state_cells: 10,
+            state_part: 0.02,
             settle_sec: 2,
             scene_area: 0.5,
             transient_sec: 8.0,
@@ -260,7 +267,13 @@ impl Default for ScreensConfig {
 /// 版2（2026-10-12）: 小窓の決め方と塗り方を直した（版1 は実物の録画で画面の 58% を塗った）。
 /// 版3（2026-10-12）: 絵を間引く・絵は JPEG（frames/0001.jpg）
 /// 版4（2026-10-13）: 会議アプリの参加者の枠・まわりの帯を外す（Span.crop）。四角の外の変化は数えず、場面の切り替わりは四角に対する大きさで決める
-pub const SCREENS_VERSION: u32 = 4;
+/// 版5（2026-10-15）: 変わった量が見ている画面の 2% 未満なら同じ画面の続き（マウスの矢印・表で選んだセルの移動・マウスを乗せた色で絵を分けない）
+pub const SCREENS_VERSION: u32 = 5;
+
+/// 画面が変わったとみなす、変わった升目の数（見ている升目 shown の state_part と、state_cells の大きいほう）
+fn state_min(cfg: &ScreensConfig, shown: usize) -> usize {
+    cfg.state_cells.max((cfg.state_part * shown as f64).ceil() as usize)
+}
 
 /// 区間の種類
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -581,6 +594,11 @@ impl SegRun<'_> {
         self.crop.outside_at(i).map_or(n, |o| n - o.iter().filter(|x| **x).count())
     }
 
+    /// i 秒に、画面が変わったとみなす変わった升目の数
+    fn state_min_at(&self, i: usize) -> usize {
+        state_min(self.cfg, self.shown_cells(i))
+    }
+
     /// 絵 a と絵 b の違い（i の秒のカメラの四角と、小さなかたまりを除く）。カメラの四角に重なる変化（話す人が替わって小窓の背景も
     /// 替わった など）は、四角をそこまで広げて除く
     fn diff(&mut self, a: usize, b: usize, i: usize) -> Vec<Blob> {
@@ -651,7 +669,7 @@ impl SegRun<'_> {
 
     /// 区間 [s, e]（両端を含む）を状態と動きの多い時間に区切る
     fn run(&mut self, s: usize, e: usize) -> Vec<Piece> {
-        let (busy, state_cells) = (self.cfg.busy_sec, self.cfg.state_cells);
+        let busy = self.cfg.busy_sec;
         let seg = self.seg;
         let mut out = Vec::new();
         // 最初の落ち着いた絵
@@ -667,7 +685,8 @@ impl SegRun<'_> {
         };
         let mut i = k + 1;
         while i <= e {
-            if Self::cells_of(&self.diff(cur.1, i, i)) < state_cells {
+            let need = self.state_min_at(i);
+            if Self::cells_of(&self.diff(cur.1, i, i)) < need {
                 cur.2 = i;
                 i += 1;
                 continue;
@@ -682,7 +701,8 @@ impl SegRun<'_> {
                 }
                 return out;
             };
-            if Self::cells_of(&self.diff(cur.1, k, k)) < state_cells {
+            let need = self.state_min_at(k);
+            if Self::cells_of(&self.diff(cur.1, k, k)) < need {
                 // 元の画面に戻った（メニューを開いて閉じた など）。同じ状態の続き
                 cur.2 = k;
                 i = k + 1;
@@ -1565,7 +1585,9 @@ pub fn analyze(scan: &Scan, cfg: &ScreensConfig) -> Screens {
             return false;
         }
         let left: usize = g.blobs(&on).iter().filter(|bl| bl.cells.len() > cfg.small_blob).map(|bl| bl.cells.len()).sum();
-        left < cfg.state_cells
+        // 見ている升目（どちらでも塗る所・切り出した四角の外ではない所）の 2% を基準に（区切るときと同じ）
+        let shown = (0..c).filter(|&k| !a.2[k] && !b.2[k]).count();
+        left < state_min(cfg, shown)
     };
     for s in 1..states.len() {
         if let Some(t) = (0..s).find(|&t| spans[states[t].0].same_as.is_none() && same(&states[s], &states[t])) {
@@ -2539,5 +2561,63 @@ mod tests {
         assert_eq!(shown.changed, Some(Rect { x: 0.5, y: 0.5, w: 0.25, h: 0.25 }));
         assert!(shown.masks.is_empty());
         assert_eq!(shown.crop, Some(crop));
+    }
+
+    // ---- 小さな変化（2026-10-15）: 見ている画面の 2% 未満の変化は同じ画面の続き ----
+
+    // 録画と同じ大きさ（小さな升 横 160 × 縦 90。升目は 80 × 45 = 3600 で、2% は 72 升目）
+    const BW: usize = 160;
+    const BH: usize = 90;
+
+    /// 白い地に動かない見出しの帯がある画面に、升目の四角（x0, y0, x1, y1, 明るさ）を足した 1 枚
+    fn screen_with(boxes: &[(usize, usize, usize, usize, u8)]) -> Vec<u8> {
+        let mut v = vec![235u8; BW * BH];
+        for y in 4..8 {
+            for x in 8..152 {
+                v[y * BW + x] = 60;
+            }
+        }
+        for &(x0, y0, x1, y1, c) in boxes {
+            for y in 2 * y0..2 * y1 {
+                for x in 2 * x0..2 * x1 {
+                    v[y * BW + x] = c;
+                }
+            }
+        }
+        v
+    }
+
+    fn scan_big(sigs: Vec<Vec<u8>>) -> Scan {
+        let frames = sigs.into_iter().enumerate().map(|(i, sig)| ScanFrame { t: i as f64, faces: Vec::new(), sig }).collect();
+        Scan { video_w: 1920, video_h: 1080, sig_w: BW, sig_h: BH, frames }
+    }
+
+    #[test]
+    fn small_changes_like_the_pointer_or_a_selected_row_stay_on_the_same_screen() {
+        // マウスの矢印（升目 3×3。小さなかたまりとしては見逃さない大きさ）が 10 秒ごとに別の所へ動いて止まる
+        let pointer = |t: usize| {
+            let k = t / 10;
+            let (x, y) = (5 + (k * 23) % 60, 10 + (k * 11) % 28);
+            (x, y, x + 3, y + 3, 20u8)
+        };
+        let f: Vec<Vec<u8>> = (0..120).map(|t| screen_with(&[pointer(t)])).collect();
+        let sc = analyze(&scan_big(f.clone()), &ScreensConfig::default());
+        assert_eq!(sc.summary.frames, 1, "{:?}", kinds(&sc));
+        // 前の決まり（10 升目）では、矢印が動くたびに別の画面になっていた
+        let old = analyze(&scan_big(f), &ScreensConfig { state_part: 0.0, ..ScreensConfig::default() });
+        assert!(old.summary.frames > 3, "{}", old.summary.frames);
+
+        // 表で選んだ行（升目 30×1 の帯）が 10 秒ごとに 1 行ずつ下がる（元の行が戻り、次の行が色づく）
+        let f: Vec<Vec<u8>> = (0..120).map(|t| screen_with(&[(10, 12 + t / 10, 40, 13 + t / 10, 200)])).collect();
+        assert_eq!(analyze(&scan_big(f), &ScreensConfig::default()).summary.frames, 1);
+
+        // メニュー（升目 10×9 = 90。画面の 2.5%）が開いたら、矢印が動いていても別の画面になる
+        let f: Vec<Vec<u8>> = (0..120)
+            .map(|t| if t < 50 { screen_with(&[pointer(t)]) } else { screen_with(&[pointer(t), (50, 20, 60, 29, 90)]) })
+            .collect();
+        let sc = analyze(&scan_big(f), &ScreensConfig::default());
+        assert_eq!(kinds(&sc), vec![SpanKind::Scene, SpanKind::Step], "{:?}", sc.spans);
+        assert_eq!(sc.spans[1].start, 50.0);
+        assert_eq!(sc.summary.frames, 2);
     }
 }
