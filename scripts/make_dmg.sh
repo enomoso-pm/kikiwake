@@ -45,5 +45,5 @@ hdiutil detach "$MNT" >/dev/null
 rmdir "$MNT" 2>/dev/null || true
 [ -z "$fail" ] || { echo ".dmg の中身がおかしい:$fail"; exit 1; }
 echo ".dmg の中身（.app・近道・設定を開く・案内・窓の絵）がそろい、Kikiwake.app の署名は壊れていない"
-echo "$OUT/$NAME（$(du -h "$OUT/$NAME" | cut -f1)）"
+echo "$OUT/${NAME}（$(du -h "$OUT/$NAME" | cut -f1)）"
 cat "$OUT/$NAME.sha256"

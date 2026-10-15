@@ -153,7 +153,7 @@ for sc in "${@:-synth}"; do
   [ "$sc" = history ] && PHASES=(history1 history2)
   for phase in "${PHASES[@]}"; do
     ROOT="$ROOT" scenario_json "$phase" "$WORK" "$REC"
-    echo "== $phase（$(date '+%H:%M:%S')）"
+    echo "== ${phase}（$(date '+%H:%M:%S')）"
     # 標準出力は記録に残し、操作役の行（[画面] …）だけをその場で出す
     KIKIWAKE_DEV_E2E="$WORK/scenario.json" KIKIWAKE_MODELS_DIR="$MODELS" KIKIWAKE_CACHE_DIR="$WORK/cache" KIKIWAKE_APP_DATA_DIR="$WORK/appdata" KIKIWAKE_UPDATE_JSON="$UPDATE_JSON" \
       "$APP" ${APP_ARGS[@]+"${APP_ARGS[@]}"} > >(tee "$WORK/stdout-$phase.log" | grep --line-buffered "^\[画面\]") 2>"$WORK/stderr-$phase.log" &

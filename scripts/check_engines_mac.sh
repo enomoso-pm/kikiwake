@@ -18,7 +18,7 @@ for f in "$@"; do
   else echo "  OK 依存は OS 標準だけ（$(echo "$deps" | wc -l | tr -d ' ') 個）"; fi
   minos=$(otool -l "$f" | awk '/LC_BUILD_VERSION/{b=1} b&&/minos/{print $2; exit}')
   if [ "$(printf '%s\n%s\n' "$minos" "$MACOS_MIN" | sort -V | head -1)" = "$minos" ]; then echo "  OK 動く macOS の下限 $minos"
-  else echo "  NG 動く macOS の下限が $minos（$MACOS_MIN より新しい）"; status=1; fi
+  else echo "  NG 動く macOS の下限が ${minos}（$MACOS_MIN より新しい）"; status=1; fi
   # 関数の後ろに置かれた定数の表（前後が <unknown> の所）は、たまたま命令の形に読めても実行されないので数えない
   hits=$(objdump -d --no-show-raw-insn --mattr=+i8mm,+bf16,+sme,+sve,+sve2 "$f" 2>/dev/null | python3 -c '
 import re, sys

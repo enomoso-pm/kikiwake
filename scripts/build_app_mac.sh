@@ -25,7 +25,7 @@ if [ -n "${KIKIWAKE_SIGN_IDENTITY:-}" ]; then
   # 一覧を先に受け取ってから探す（パイプの後ろの grep -q は、下の LEFT と同じ理由で「無い」側に倒れることがある）
   IDS="$(security find-identity -p codesigning)"
   grep -qF "\"$KIKIWAKE_SIGN_IDENTITY\"" <<<"$IDS" || {
-    echo "署名の証明書「$KIKIWAKE_SIGN_IDENTITY」がキーチェーンに無い（security find-identity -p codesigning で確かめる）"
+    echo "署名の証明書「${KIKIWAKE_SIGN_IDENTITY}」がキーチェーンに無い（security find-identity -p codesigning で確かめる）"
     exit 1
   }
   export APPLE_SIGNING_IDENTITY="$KIKIWAKE_SIGN_IDENTITY"
