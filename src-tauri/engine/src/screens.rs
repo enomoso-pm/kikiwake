@@ -6,6 +6,8 @@
 //! core の kikiwake-dev screens で判定し直せる）。
 //! 絵そのものは、保存のとき（「保存…」で「マニュアルの素材（.zip）」を選んだとき）に元の録画から取り出す。
 //! 行の再生と同じく、元の録画を移したり書き換えたりしたら作れない。
+//! 判定の版（core の SCREENS_VERSION）が上がると、前の版の結果は使わない。保存の窓には「読み取り直しが要る」（screens_outdated）と出し、
+//! 新しい録音として選び直すと、文字起こしは使い回して画面だけ読み取り直す。
 //! zip の中身: README.md（AI への頼みごと）・timeline.md / timeline.json（区間ごとの絵と発言）・transcript.md（保存する .md と同じ）・
 //! frames/*.jpg（会議アプリの参加者の枠などを外し、共有した画面の部分だけを切り出したもの。見分けられなかった絵は録画の全体）
 use std::fs;
@@ -71,7 +73,7 @@ fn settings() -> String {
 
 /// 前の判定の結果がそのまま使える（同じ形の版・同じ数値）
 pub fn reusable(job: &JobDir) -> bool {
-    job.file(RESULT).is_file() && fs::read_to_string(job.file(SETTINGS)).ok().as_deref() == Some(settings().as_str())
+    load(job).is_some() && fs::read_to_string(job.file(SETTINGS)).ok().as_deref() == Some(settings().as_str())
 }
 
 /// 判定の結果（無い・読めない・形の版が違うときは None）
@@ -80,17 +82,29 @@ pub fn load(job: &JobDir) -> Option<Screens> {
     (s.version == SCREENS_VERSION).then_some(s)
 }
 
+/// 前の版で読み取った（判定の版が違う結果がある）。そのままでは zip を作れないので、読み取り直しが要ると知らせる
+/// （2026-10-16。前は「マニュアル用にしていない録音」と同じに扱い、保存の窓に zip の行が理由なしに出なかった）
+fn outdated(job: &JobDir) -> bool {
+    let Ok(text) = fs::read_to_string(job.file(RESULT)) else {
+        return false;
+    };
+    let v: Option<u64> = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|j| j.get("version")?.as_u64());
+    v.is_some_and(|v| v != u64::from(SCREENS_VERSION))
+}
+
 fn info_of(s: &Screens) -> ScreensInfo {
     let m = &s.summary;
     ScreensInfo { frames: m.frames, scenes: m.scenes, steps: m.steps, faces: m.faces, error: None }
 }
 
-/// 画面に出す数。マニュアル用にしていない録音は None
+/// 画面に出す数。マニュアル用にしていない録音は None。
+/// 読み取れなかった（いちばん新しい読み取りの失敗）・前の版で読み取った（screens_outdated）ときは、絵 0 枚とその理由
 pub fn info(job: &JobDir) -> Option<ScreensInfo> {
     if let Some(s) = load(job) {
         return Some(info_of(&s));
     }
-    let e: AppError = serde_json::from_str(&fs::read_to_string(job.file(FAILED)).ok()?).ok()?;
+    let failed = fs::read_to_string(job.file(FAILED)).ok().and_then(|t| serde_json::from_str::<AppError>(&t).ok());
+    let e = failed.or_else(|| outdated(job).then(AppError::screens_outdated))?;
     Some(ScreensInfo { frames: 0, scenes: 0, steps: 0, faces: 0, error: Some(e) })
 }
 
@@ -143,9 +157,14 @@ pub fn readme(lang: Lang) -> &'static str {
     }
 }
 
-/// zip を作れるか（絵が 1 枚以上ある・元の録画が同じ場所にそのままある）。作れるなら判定の結果を返す
+/// zip を作れるか（今の版で読み取った絵が 1 枚以上ある・元の録画が同じ場所にそのままある）。作れるなら判定の結果を返す
 pub fn check_ready(job: &JobDir) -> Result<Screens, AppError> {
-    let sc = load(job).filter(|s| s.summary.frames > 0).ok_or_else(AppError::screens_unavailable)?;
+    let Some(sc) = load(job) else {
+        return Err(if outdated(job) { AppError::screens_outdated() } else { AppError::screens_unavailable() });
+    };
+    if sc.summary.frames == 0 {
+        return Err(AppError::screens_unavailable());
+    }
     if source_state(job) != SourceState::Ok {
         return Err(AppError::screens_source_missing());
     }
@@ -262,6 +281,38 @@ mod tests {
         fs::remove_file(job.file(RESULT)).unwrap();
         fs::write(job.file(FAILED), serde_json::to_string(&AppError::screens_unavailable()).unwrap()).unwrap();
         assert_eq!(info(&job).and_then(|i| i.error).map(|e| e.code), Some("screens_unavailable".to_string()));
+        let _ = fs::remove_dir_all(&job.dir);
+    }
+
+    /// 前の版で読み取った録画（判定の版が上がった）: 保存の窓に「読み取り直しが要る」と出し、次に始めたら読み取り直す（2026-10-16）
+    #[test]
+    fn a_result_from_an_earlier_version_asks_to_read_again() {
+        let job = tmp_job("outdated");
+        let mut sc = core::analyze(
+            &Scan { video_w: 64, video_h: 36, sig_w: 4, sig_h: 2, frames: Vec::new() },
+            &ScreensConfig::default(),
+        );
+        sc.version = SCREENS_VERSION - 1;
+        sc.summary.frames = 2;
+        fs::write(job.file(RESULT), serde_json::to_string(&sc).unwrap()).unwrap();
+        // 判定の数値の控えが今と同じでも、結果が前の版なら使い回さない
+        fs::write(job.file(SETTINGS), settings()).unwrap();
+        assert!(!reusable(&job));
+        let i = info(&job).unwrap();
+        assert_eq!((i.frames, i.error.map(|e| e.code)), (0, Some("screens_outdated".to_string())));
+        assert_eq!(check_ready(&job).unwrap_err().code, "screens_outdated");
+        // 読み取り直して失敗したら、その失敗を出す（前の版の結果は残っている）
+        fs::write(job.file(FAILED), serde_json::to_string(&AppError::screens_unavailable()).unwrap()).unwrap();
+        assert_eq!(info(&job).and_then(|i| i.error).map(|e| e.code), Some("screens_unavailable".to_string()));
+        fs::remove_file(job.file(FAILED)).unwrap();
+        // 今の版で読み取り直したら、使い回せて数が出る
+        sc.version = SCREENS_VERSION;
+        fs::write(job.file(RESULT), serde_json::to_string(&sc).unwrap()).unwrap();
+        assert!(reusable(&job));
+        assert_eq!(info(&job).map(|i| (i.frames, i.error.is_none())), Some((2, true)));
+        // 読めない screens.json は、前の版とはみなさない（マニュアル用にしていない録音と同じ）
+        fs::write(job.file(RESULT), "{").unwrap();
+        assert_eq!(info(&job), None);
         let _ = fs::remove_dir_all(&job.dir);
     }
 }

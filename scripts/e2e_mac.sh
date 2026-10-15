@@ -19,7 +19,9 @@
 #     en     英語（約束 版7）: 英語の Mac のまね（-AppleLanguages (en-US)。この Mac の設定は変えない）で合成会議を通し、
 #            メニュー・画面・保存するファイル（名前と中身）が英語か、日本語に切り替えると日本語になるか、英語がはみ出さないか
 #     screens マニュアルの素材（約束 版13）: 作り物の画面共有の録画（合成会議の声。scripts/make_screens_video.sh。ffmpeg が要る）で
-#            「マニュアル用に、画面の絵も取り出す」→ 保存の .zip。終わったら zip の中身（ファイル・timeline の区間・小窓が黒いか）をここで確かめる
+#            「マニュアル用に、画面の絵も取り出す」→ 保存の .zip。終わったら zip の中身（ファイル・timeline の区間・小窓が黒いか）をここで確かめる。
+#            同じ作業フォルダで 2 回起動する: screens（↑。終わりに判定の版を 1 つ下げる）→ screens2（約束 版14: 前の版で読み取った録画を開くと、
+#            .zip の行が押せず理由と作り直し方が出る → 案内のとおりに選び直すと .zip の行が戻る）
 #
 # 作業フォルダは ~/Library/Caches/Kikiwake-dev/phase2/e2e/<筋書き>/（毎回まっさらにする）。snap/*.json は見た目の記録（手順5-3）。
 # アプリのデータ（この Mac の速さの記録・覚えた画面の言語）も作業フォルダの中に分け、いつもの Kikiwake に混ぜない。
@@ -70,8 +72,8 @@ elif name in ("history1", "history2"):
     fx = f"{root}/contract/fixtures"
     sc.update(recording=rec, recording2=rec.replace(".wav", "_2.wav"), recording3=rec.replace(".wav", "_3.wav"), recording4=rec.replace(".wav", "_4.wav"),
               fixtures=fx, cacheDir=f"{work}/cache", saveDir=f"{work}/out", timeoutMin=10, names=json.load(open(f"{fx}/names.json", encoding="utf-8")))
-elif name == "screens":
-    sc.update(recording=rec, timeoutMin=10)
+elif name in ("screens", "screens2"):
+    sc.update(recording=rec, cacheDir=f"{work}/cache", timeoutMin=10)
 elif name == "real":
     sc.update(recording=rec, quiet=True, timeoutMin=45, reopen=os.environ.get("REOPEN") == "1")
     sc.pop("snapDir")
@@ -148,9 +150,10 @@ for sc in "${@:-synth}"; do
       ;;
     *) echo "知らない筋書き: $sc"; exit 2 ;;
   esac
-  # 筋書き history は、同じ作業フォルダで2回起動する（閉じてから開き直す）
+  # 筋書き history と screens は、同じ作業フォルダで2回起動する（閉じてから開き直す）
   PHASES=("$sc")
   [ "$sc" = history ] && PHASES=(history1 history2)
+  [ "$sc" = screens ] && PHASES=(screens screens2)
   for phase in "${PHASES[@]}"; do
     ROOT="$ROOT" scenario_json "$phase" "$WORK" "$REC"
     echo "== ${phase}（$(date '+%H:%M:%S')）"
@@ -175,7 +178,7 @@ for sc in "${@:-synth}"; do
     echo "== $phase 終了コード $code"
     [ "$code" = 0 ] || { status=1; break; }
     # マニュアルの素材: 保存した zip の中身（ファイル・timeline の区間・右下の小窓が黒く、地は黒くない・transcript.md が保存した .md と同じ）
-    if [ "$sc" = screens ]; then
+    if [ "$phase" = screens ]; then
       python3 - "$WORK/rec" <<'PYCHECK' || { status=1; break; }
 import glob, os, subprocess, sys, zipfile
 rec = sys.argv[1]

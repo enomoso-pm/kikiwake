@@ -16,6 +16,7 @@ type Place = "source" | "recent";
  * sourceDir: 元のファイルと同じフォルダ（エンジンが返す既定の保存先）。
  * sourceGone: 元のファイルのフォルダが無いので、エンジンが書類フォルダを返した（「元のファイルと同じ」とは書かない）。
  * screens: 版13。マニュアル用にした録音の画面の絵の数（無ければ「マニュアルの素材」を出さない）。
+ *   版14: 前の版で読み取った録画（error が screens_outdated）は、選べない形で出し、下に作り直し方を出す。
  * onSave: 選んだ保存先と形式で保存する（覚えるのはこの窓が行う。zip は覚えない）
  */
 export function SaveDialog({
@@ -44,6 +45,7 @@ export function SaveDialog({
   // 版13: マニュアルの素材（.zip）。毎回外れた状態で開き、選んだときだけ保存する（2026-10-12 決定）
   const [zip, setZip] = useState(false);
   const zipOk = Boolean(screens && screens.frames > 0 && !screens.error);
+  const zipOutdated = screens?.error?.code === "screens_outdated";
   const wantZip = zip && zipOk;
 
   // 開いたら「保存」に（Enter でそのまま保存できる）
@@ -141,10 +143,13 @@ export function SaveDialog({
               >
                 <span className="check-box">{wantZip ? "✓" : ""}</span>
                 <span className="save-format-ext">.zip</span>
-                <span className="save-format-hint">{zipOk ? s.zipHint(screens.frames) : screens.error ? s.zipError : s.zipNone}</span>
+                <span className="save-format-hint">
+                  {zipOk ? s.zipHint(screens.frames) : zipOutdated ? s.zipOutdated : screens.error ? s.zipError : s.zipNone}
+                </span>
               </button>
             </div>
             {wantZip && screens.faces > 0 ? <span className="save-note pretty">{s.zipFaces(screens.faces)}</span> : null}
+            {zipOutdated && screens.error ? <span className="save-note pretty">{t.engine.error(screens.error)}</span> : null}
           </div>
         ) : null}
         <label className="save-field">

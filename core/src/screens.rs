@@ -13,10 +13,15 @@
 //!      小窓は長く動き続けるものだけにした）
 //!   3. カメラの四角が画面の 30% 以上（または動き続ける所が画面の半分以上）が 5 秒続く時間は「カメラの時間」（絵を出さない）
 //!   4. 共有の時間を「状態」（画面が落ち着いている間のひとまとまり）に区切る。カメラの四角と 4 升以下の小さなかたまり（マウスの矢印など）は見ない。
-//!      基準の絵と、見ている画面の 2%（少なくとも 10 升）以上違い、そのあと 2 秒静かなら新しい状態。変わった所を囲む四角が画面の半分以上なら
-//!      場面の切り替わり、それ未満は画面の中の変化。
+//!      基準の絵と、見ている画面の 2%（少なくとも 10 升）以上違い、そのあと 2 秒静かなら新しい状態。画面に写っている中身（文字や絵）のうち、
+//!      形まで替わった所が 35% 以上なら場面の切り替わり、それ未満は画面の中の変化（中身がほとんど無い画面では、変わった所を囲む四角が
+//!      画面の半分以上なら場面の切り替わり）。
 //!      （2026-10-15: 10 升だけでは、マウスの矢印の移動・表で選んだセルが 1 行動いた・マウスを乗せて色が変わった、で別の画面になっていた。
 //!      基準の絵と比べるので、動くだけの変化は積み重ならず、入力のように足されていく変化は積み重なって 2% を超えた所で新しい状態になる）
+//!      （2026-10-16: 前は変わった所を囲む四角の広さで決めていた。文字のスライドをめくると四角が画面の半分に届かず「画面の中の変化」になり、
+//!      「同じ所で続く変化」として最後の 1 枚にまとめられた（作り物のスライド 10 枚の録画で絵 2 枚）。逆に、表で範囲を選んだ・窓が手前に来た、
+//!      のように離れた所が少しずつ変わっただけで、四角が広がって場面の切り替わりになっていた。明るさがそろって変わっただけ
+//!      （選んだ所の色・窓の明るさ）は、形が替わっていないので数えない）
 //!   5. 前に出てきた状態と同じなら「前と同じ」（絵を出さない）、8 秒以内に元へ戻った表示は「一時的な表示」（通知などの中身を出さない）、
 //!      10 秒以上落ち着かない時間は「動きの多い時間」（真ん中の 1 枚）
 //!   6. 状態の絵は最後の 1 枚（変わる直前。読み込みが終わり、次に押すボタンの上に矢印が乗っていることが多い）。カメラの四角は黒く塗る。
@@ -161,8 +166,15 @@ pub struct ScreensConfig {
     pub state_part: f64,
     /// 変わったあと、この秒数静かなら新しい状態
     pub settle_sec: usize,
-    /// 変わった所を囲む四角がこの割合以上なら、場面の切り替わり（未満は画面の中の変化）
+    /// 中身（文字や絵）のある升目のうち、形が替わった升目がこの割合以上なら、場面の切り替わり（未満は画面の中の変化。2026-10-16 決定）。
+    /// 0 なら前の決め方（変わった所を囲む四角の広さ scene_area）
+    pub scene_replaced: f64,
+    /// 中身がほとんど無い画面（無地どうしの切り替わりなど）では、変わった所を囲む四角がこの割合以上なら、場面の切り替わり
     pub scene_area: f64,
+    /// 中身のある升目: 中の 2×2 の小さな升の明るさの差（最大−最小）がこれ以上
+    pub content_texture: u8,
+    /// 形が替わった升目: 中の 2×2 の小さな升の明るさの並び方（平均を引いたもの）がこれ以上違う（明るさがそろって変わっただけなら替わらない）
+    pub pattern_delta: u8,
     /// この秒数より短く、元の画面へ戻った状態は一時的な表示（通知など）
     pub transient_sec: f64,
     /// この秒数以上静かにならない時間は、動きの多い時間
@@ -232,7 +244,10 @@ impl Default for ScreensConfig {
             state_cells: 10,
             state_part: 0.02,
             settle_sec: 2,
+            scene_replaced: 0.35,
             scene_area: 0.5,
+            content_texture: 8,
+            pattern_delta: 10,
             transient_sec: 8.0,
             busy_sec: 10,
             grow_overlap: 0.5,
@@ -268,7 +283,9 @@ impl Default for ScreensConfig {
 /// 版3（2026-10-12）: 絵を間引く・絵は JPEG（frames/0001.jpg）
 /// 版4（2026-10-13）: 会議アプリの参加者の枠・まわりの帯を外す（Span.crop）。四角の外の変化は数えず、場面の切り替わりは四角に対する大きさで決める
 /// 版5（2026-10-15）: 変わった量が見ている画面の 2% 未満なら同じ画面の続き（マウスの矢印・表で選んだセルの移動・マウスを乗せた色で絵を分けない）
-pub const SCREENS_VERSION: u32 = 5;
+/// 版6（2026-10-16）: 場面の切り替わりを、中身（文字や絵）のうち形まで替わった所の割合で決める（スライドをめくっても絵がまとめられない。
+/// 表で範囲を選んだ・窓が手前に来た、では場面の切り替わりにならない）
+pub const SCREENS_VERSION: u32 = 6;
 
 /// 画面が変わったとみなす、変わった升目の数（見ている升目 shown の state_part と、state_cells の大きいほう）
 fn state_min(cfg: &ScreensConfig, shown: usize) -> usize {
@@ -279,7 +296,7 @@ fn state_min(cfg: &ScreensConfig, shown: usize) -> usize {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SpanKind {
-    /// 場面の切り替わり（画面の大半が替わった。共有の時間の始まりも）
+    /// 場面の切り替わり（画面に写っている文字や絵の多くが替わった。共有の時間の始まりも）
     Scene,
     /// 画面の中の変化（一部だけ替わった）
     Step,
@@ -410,6 +427,13 @@ impl Grid {
                     || a[k + sw + 1].abs_diff(b[k + sw + 1]) >= delta;
             }
         }
+    }
+
+    /// 升目 c の中の 2×2 の小さな升の明るさ
+    fn quad(&self, sig: &[u8], c: usize) -> [i16; 4] {
+        let (cx, cy) = (c % self.cw, c / self.cw);
+        let k = 2 * cy * self.sw + 2 * cx;
+        [sig[k] as i16, sig[k + 1] as i16, sig[k + self.sw] as i16, sig[k + self.sw + 1] as i16]
     }
 
     fn to_cells(&self, r: &Rect) -> Cells {
@@ -667,6 +691,57 @@ impl SegRun<'_> {
         blobs.iter().map(|b| b.cells.len()).sum()
     }
 
+    /// 絵 a → 絵 b の変化（blobs）が場面の切り替わりか（2026-10-16 決定。中身のうち形まで替わった所が scene_replaced 以上）。
+    /// 実物の 2 時間半の録画（表とブラウザの操作）: 前の決め方で場面の切り替わりだった所のうち、表で範囲を選んだ所は多くが 5% 未満、
+    /// 窓が手前に来た所は 5〜33%（暗い画面ほど高い）、別のページを開いた所は 38%、スクロールは 32〜45%。作り物のスライド（白地に文字）:
+    /// 文字の多いスライドどうし 63〜68%・箇条書き 3 行どうし 48〜53%・表どうし（罫線は同じ）36〜41%・章の扉どうし 29〜39%、
+    /// 箇条書きが 1 行出る 7〜18%・表で 6 行を選ぶ 14〜15%。境目 35% で絵 240 → 250 枚（30% なら 283 枚。増えるのはスクロールの途中など）
+    fn is_scene(&self, a: usize, b: usize, blobs: &[Blob], bbox: &Cells) -> bool {
+        let by_area = bbox.area() as f64 >= self.cfg.scene_area * self.shown_cells(b) as f64;
+        if self.cfg.scene_replaced <= 0.0 {
+            return by_area;
+        }
+        let (ratio, content) = self.replaced(a, b, blobs);
+        // 中身がほとんど無い画面（無地どうしの切り替わりなど）は、囲む四角の広さで決める
+        if content < self.state_min_at(b) {
+            return by_area;
+        }
+        ratio >= self.cfg.scene_replaced
+    }
+
+    /// 中身（文字や絵）のある升目（a か b のどちらかで）のうち、変わっていて形も替わった升目の割合と、中身のある升目の数。
+    /// b の秒の四角の外・カメラの四角は数えない
+    fn replaced(&self, a: usize, b: usize, blobs: &[Blob]) -> (f64, usize) {
+        let g = self.g;
+        let m = self.mask_at(b);
+        let mut changed = vec![false; g.n()];
+        for bl in blobs {
+            for &c in &bl.cells {
+                changed[c] = true;
+            }
+        }
+        let tex = |q: &[i16; 4]| q.iter().max().unwrap() - q.iter().min().unwrap() >= self.cfg.content_texture as i16;
+        let (mut content, mut replaced) = (0usize, 0usize);
+        for c in 0..g.n() {
+            if m[c] {
+                continue;
+            }
+            let (qa, qb) = (g.quad(&self.frames[a].sig, c), g.quad(&self.frames[b].sig, c));
+            if !(tex(&qa) || tex(&qb)) {
+                continue;
+            }
+            content += 1;
+            if changed[c] {
+                let (ma, mb) = (qa.iter().sum::<i16>() as f32 / 4.0, qb.iter().sum::<i16>() as f32 / 4.0);
+                let d = (0..4).map(|j| ((qa[j] as f32 - ma) - (qb[j] as f32 - mb)).abs()).fold(0.0f32, f32::max);
+                if d >= self.cfg.pattern_delta as f32 {
+                    replaced += 1;
+                }
+            }
+        }
+        (if content == 0 { 0.0 } else { replaced as f64 / content as f64 }, content)
+    }
+
     /// 区間 [s, e]（両端を含む）を状態と動きの多い時間に区切る
     fn run(&mut self, s: usize, e: usize) -> Vec<Piece> {
         let busy = self.cfg.busy_sec;
@@ -719,7 +794,7 @@ impl SegRun<'_> {
             let blobs = self.diff(cur.2, k, k);
             let bbox = blobs.iter().map(|b| b.rect).reduce(|a, b| a.union(&b));
             let (kind, changed) = match bbox {
-                Some(r) if (r.area() as f64) < self.cfg.scene_area * self.shown_cells(k) as f64 => (SpanKind::Step, Some(r)),
+                Some(r) if !self.is_scene(cur.2, k, &blobs, &r) => (SpanKind::Step, Some(r)),
                 _ => (SpanKind::Scene, None),
             };
             cur = (new_start, k, k, kind, changed);
@@ -2035,6 +2110,34 @@ mod tests {
             }
             self
         }
+        /// 升目の四角に文字のような模様（升目ごとに中の 2×2 のどれか 1 つが濃い。どれが濃いかを seed で変えると、中身が替わる）
+        fn text(mut self, x0: usize, y0: usize, x1: usize, y1: usize, seed: u64) -> Self {
+            let mut s = seed.wrapping_mul(2862933555777941757).wrapping_add(3037000493);
+            for cy in y0..y1 {
+                for cx in x0..x1 {
+                    s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    let dark = (s >> 60) as usize % 4;
+                    for (j, (dx, dy)) in [(0, 0), (1, 0), (0, 1), (1, 1)].into_iter().enumerate() {
+                        self.0[(2 * cy + dy) * SW + 2 * cx + dx] = if j == dark { 90 } else { 240 };
+                    }
+                }
+            }
+            self
+        }
+        /// 文字の所の中身を替える（升目ごとに、濃い所を次の位置へ。どの升目も形が替わる）
+        fn retext(mut self, x0: usize, y0: usize, x1: usize, y1: usize) -> Self {
+            let at = |cx: usize, cy: usize, j: usize| {
+                let (dx, dy) = [(0, 0), (1, 0), (0, 1), (1, 1)][j];
+                (2 * cy + dy) * SW + 2 * cx + dx
+            };
+            for cy in y0..y1 {
+                for cx in x0..x1 {
+                    let j = (0..4).find(|&j| self.0[at(cx, cy, j)] < 200).unwrap_or(0);
+                    self.0.swap(at(cx, cy, j), at(cx, cy, (j + 1) % 4));
+                }
+            }
+            self
+        }
         /// 升目の四角を毎回違う模様に（カメラの代わり）
         fn noise(mut self, x0: usize, y0: usize, x1: usize, y1: usize, seed: u64) -> Self {
             let mut s = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -2619,5 +2722,61 @@ mod tests {
         assert_eq!(kinds(&sc), vec![SpanKind::Scene, SpanKind::Step], "{:?}", sc.spans);
         assert_eq!(sc.spans[1].start, 50.0);
         assert_eq!(sc.summary.frames, 2);
+    }
+
+    /// 文字のスライドをめくると、文字の所が画面の半分に届かなくても場面の切り替わりで、1 枚ずつ絵が残る（2026-10-16。
+    /// 前の決め方では「画面の中の変化」になり、同じ所で続く変化として最後の 1 枚にまとめられていた）
+    #[test]
+    fn turning_text_slides_keeps_every_slide_even_when_the_text_covers_less_than_half() {
+        // 上の帯（ひな形。毎回同じ）と、文字の所（9×5 升目＝画面の 31%）
+        let slide = |k: u64| Pic::flat(240).fill(1, 0, 15, 1, 60).text(2, 2, 11, 7, k);
+        let frames: Vec<_> = (0..5).flat_map(|k| repeat(slide(k), 20)).collect();
+        let sc = analyze_default(frames.clone());
+        assert_eq!(sc.summary.frames, 5, "{:?}", kinds(&sc));
+        assert!(kinds(&sc).iter().all(|k| *k == SpanKind::Scene), "{:?}", kinds(&sc));
+        let old = analyze(&scan(frames), &ScreensConfig { scene_replaced: 0.0, ..ScreensConfig::default() });
+        assert!(old.summary.frames < 5, "前の決め方では {} 枚", old.summary.frames);
+    }
+
+    /// 表で範囲を選ぶ（選んだ所の地の色が少し変わるだけで、文字の形は同じ）・離れた所の欄が変わる、では、
+    /// 変わった所を囲む四角が画面いっぱいでも場面の切り替わりにしない（2026-10-16）
+    #[test]
+    fn selecting_a_range_with_small_changes_far_apart_is_a_step() {
+        let sheet = Pic::flat(240).text(0, 0, 16, 9, 7);
+        let mut selected = sheet.clone();
+        for cy in 3..6 {
+            for cx in 2..14 {
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                    let k = (2 * cy + dy) * SW + 2 * cx + dx;
+                    if selected.0[k] > 200 {
+                        selected.0[k] -= 8;
+                    }
+                }
+            }
+        }
+        // 左上の欄と右下の数（離れた所。ここは形が替わる）
+        let selected = selected.retext(0, 0, 5, 1).retext(11, 8, 16, 9);
+        let frames = [repeat(sheet, 20), repeat(selected, 20)].concat();
+        let sc = analyze_default(frames.clone());
+        assert_eq!(kinds(&sc), vec![SpanKind::Scene, SpanKind::Step], "{:?}", sc.spans);
+        let old = analyze(&scan(frames), &ScreensConfig { scene_replaced: 0.0, ..ScreensConfig::default() });
+        assert_eq!(kinds(&old), vec![SpanKind::Scene, SpanKind::Scene], "前の決め方では場面の切り替わりだった");
+    }
+
+    /// 窓が手前に来る（上の帯の明るさがそろって変わる・左右の縁に線）は、画面の中の変化（2026-10-16）
+    #[test]
+    fn a_window_coming_to_the_front_is_a_step() {
+        let page = Pic::flat(240).text(0, 0, 16, 9, 5);
+        let mut front = page.clone();
+        for v in front.0.iter_mut().take(2 * SW) {
+            *v = v.saturating_sub(30);
+        }
+        for y in 2..SH {
+            for x in [0, SW - 1] {
+                front.0[y * SW + x] = 60;
+            }
+        }
+        let sc = analyze_default([repeat(page, 20), repeat(front, 20)].concat());
+        assert_eq!(kinds(&sc), vec![SpanKind::Scene, SpanKind::Step], "{:?}", sc.spans);
     }
 }

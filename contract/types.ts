@@ -1,6 +1,6 @@
 // Kikiwake 画面 ⇄ エンジンの受け渡しの約束（データの形）。ここが正。
 // 変更したら contract/README.md の履歴に書く。
-// 版 13（2026-10-12）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
+// 版 14（2026-10-16）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
 // 書き起こしは正確さ優先（Whisper large-v3）だけ。版1にあった品質の選択（速さ優先）は無くした。
 
 /**
@@ -152,7 +152,10 @@ export interface ScreensInfo {
   steps: number;
   /** 顔が写っているかもしれない絵の数（写真の顔など。黒く塗った所の外で顔が見つかった） */
   faces: number;
-  /** 録画を読み取れなかった（映像が無い・読めない）。文字起こしは続けている */
+  /**
+   * 録画を読み取れなかった（映像が無い・読めない。文字起こしは続けている）。
+   * 版14: 前の版で読み取った録画は screens_outdated（frames は 0。保存の窓に、読み取り直し方を出す）
+   */
   error?: AppError;
 }
 
@@ -469,7 +472,8 @@ export type ErrorCode =
   | "not_writable" // 版11: 保存先のフォルダに書き込めない（書き込む許可が無い・読み取り専用のディスク）
   | "save_failed" // 版11: そのほかの理由で保存できない（空き容量が無いときは disk_full）
   | "screens_unavailable" // 版13: マニュアルの素材の絵を取り出せない（映像が無い・画面の共有が見つからない・映像を読めない）
-  | "screens_source_missing"; // 版13: マニュアルの素材を作るには元の録画が要る（移した・書き換えた）
+  | "screens_source_missing" // 版13: マニュアルの素材を作るには元の録画が要る（移した・書き換えた）
+  | "screens_outdated"; // 版14: マニュアルの素材の画面の読み取りが前の版のもの（絵の選び方が変わった）。新しい録音として選び直すと読み取り直す
 
 export interface AppError {
   code: ErrorCode;

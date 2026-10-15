@@ -112,6 +112,14 @@ impl AppError {
             "マニュアルの素材を作るには、元の録画が要ります。元の録画を移したり消したりしていないか確かめてください。",
         )
     }
+    /// 版14: マニュアルの素材の画面の読み取りが前の版のもの（判定の版が上がって、絵の選び方が変わった）。
+    /// 新しい録音として選び直すと、文字起こしは使い回して画面だけ読み取り直す
+    pub fn screens_outdated() -> Self {
+        Self::new(
+            "screens_outdated",
+            "画面の絵の選び方が、新しい版で変わりました。マニュアルの素材を作るには、「新しい録音」でこの録画を選び直し、「マニュアル用に、画面の絵も取り出す」にチェックを入れてはじめてください（文字起こしはやり直しません）。",
+        )
+    }
 
     pub fn is_cancelled(&self) -> bool {
         self.code == "cancelled"
@@ -165,6 +173,7 @@ mod tests {
             AppError::save_failed(),
             AppError::screens_unavailable(),
             AppError::screens_source_missing(),
+            AppError::screens_outdated(),
         ];
         for e in ours {
             assert_eq!(fixture[&e.code]["message"], e.message, "{}", e.code);

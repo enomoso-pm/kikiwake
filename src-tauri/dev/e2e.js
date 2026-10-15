@@ -12,7 +12,10 @@
 //   en     英語（約束 版7）: 英語の Mac のまねで起動 → メニュー・画面・保存が英語、保存するファイルが「_transcript」→ 日本語に切り替えるとメニューと保存も日本語に。
 //          英語がはみ出さないか（1200×800・900×560）
 //   screens マニュアルの素材（約束 版13）: 作り物の画面共有の録画（scripts/make_screens_video.sh）で「マニュアル用に、画面の絵も取り出す」→ 処理中の一文 →
-//          絵の数 →「保存…」の .zip（毎回外れている・.md と一緒に・zip だけ・上書き）。zip の中身は scripts/e2e_mac.sh が確かめる
+//          絵の数 →「保存…」の .zip（毎回外れている・.md と一緒に・zip だけ・上書き）。zip の中身は scripts/e2e_mac.sh が確かめる。
+//          終わりに判定の版を 1 つ下げる（判定の版が上がったときのまね）
+//   screens2 約束 版14: screens のあと同じ作業フォルダで開き直し、前の版で読み取った録画を一覧から開くと、.zip の行が押せず理由と作り直し方が出る →
+//          案内のとおりに「新しい録音」で選び直してチェックを入れると、画面だけ読み取り直して .zip の行が戻る
 // 保存（2026-09-29 決定・約束 版12）: 保存の帯は「保存…」だけで、押すと窓で形式と保存先を選ぶ（覚えて次からも同じ）。ファイルは録音の名前入り
 // 「<元の名前>_文字起こし.<形式>」を、選んだフォルダ（既定は元のファイルと同じフォルダ）にそのまま書く。Finder で表示と削除は一覧の行の「…」から
 (() => {
@@ -896,6 +899,60 @@
     escape();
     await sleep(200);
     info(`zip の中身は scripts/e2e_mac.sh が確かめる: ${zipPath}`);
+
+    // 約束 版14: 判定の版が上がったときのまね。作業フォルダの判定と、その数値の控えの版を 1 つ下げる（筋書き screens2 で開き直す）
+    const dir = `${sc.cacheDir}/jobs/${lastDone.jobId}`;
+    for (const f of ["screens.json", "screens_settings.json"]) {
+      const j = JSON.parse(await invoke("dev_read", { path: `${dir}/${f}` }));
+      j.version -= 1;
+      await invoke("dev_write", { path: `${dir}/${f}`, text: JSON.stringify(j) });
+    }
+    info("判定の版を 1 つ下げた（次の起動で、前の版で読み取った録画として開く）");
+  }
+
+  /** 約束 版14: 前の版で読み取った録画（screens のあと、同じ作業フォルダで開き直す） */
+  async function screens2Scenario(sc) {
+    const L = JA;
+    await screen(L.newTitle, 30000);
+    await openEntry(sc.recording.split("/").pop());
+    let dlg = await openSaveDialog(L);
+    let z = zipRow(dlg);
+    check(
+      "前の版で読み取った録画: .zip の行は出るが押せず、理由が出る",
+      z && z.disabled && norm(z.textContent).includes("前の版で読み取ったので、このままでは作れません"),
+      norm(z?.textContent),
+    );
+    const note = [...dlg.querySelectorAll(".save-note")].map((n) => norm(n.textContent)).join(" / ");
+    check(
+      "その下に作り直し方（「新しい録音」で選び直し、チェックを入れてはじめる）",
+      note.includes("「新しい録音」でこの録画を選び直し") && note.includes("にチェックを入れてはじめてください"),
+      note,
+    );
+    await snap(sc, "save-dialog-zip-outdated");
+    escape();
+    await sleep(200);
+    // 案内のとおりに: 「新しい録音」で選び直し、チェックを入れてはじめる → 文字起こしは使い回し、画面だけ読み取り直す
+    await newRecording(L);
+    const s1 = await chooseFile(sc.recording, L);
+    screensOption()?.click();
+    await sleep(100);
+    check("選び直して「マニュアル用に、画面の絵も取り出す」にチェック", screensOption()?.getAttribute("aria-checked") === "true");
+    lastDone = null;
+    const t0 = Date.now();
+    s1.click();
+    await waitNaming(sc, L);
+    const got = lastDone?.screens;
+    check(
+      "画面だけ読み取り直して、絵の数が戻る（絵 4・場面 3・変化 1）",
+      got && got.frames === 4 && got.scenes === 3 && got.steps === 1 && !got.error,
+      `${fmt((Date.now() - t0) / 1000)} 秒・${JSON.stringify(got)}`,
+    );
+    dlg = await openSaveDialog(L);
+    z = zipRow(dlg);
+    check("「保存…」の .zip の行が戻る", z && !z.disabled && norm(z.textContent).includes("場面ごとの画面の絵 4 枚"), norm(z?.textContent));
+    check("作り直し方の文は消える", ![...dlg.querySelectorAll(".save-note")].some((n) => norm(n.textContent).includes("新しい録音")));
+    escape();
+    await sleep(200);
   }
 
   // ---- 実録音（中身は出さず、時間と件数だけ） ------------------------------------------------
@@ -1396,6 +1453,7 @@
     else if (sc.name === "en") await enScenario(sc);
     else if (sc.name === "photo") await photoScenario(sc);
     else if (sc.name === "screens") await screensScenario(sc);
+    else if (sc.name === "screens2") await screens2Scenario(sc);
     else if (sc.name === "real") await realScenario(sc);
     else if (sc.name === "history1") return await history1(sc);
     else if (sc.name === "history2") await history2(sc);

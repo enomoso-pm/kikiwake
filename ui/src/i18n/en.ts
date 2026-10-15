@@ -29,6 +29,8 @@ const ERRORS: Record<string, string> = {
   save_failed: "Couldn't save. Check the save location and try again. If it keeps happening, copy the details and let us know.",
   screens_unavailable: "Couldn't take screen images from this recording (no screen sharing found, or the video can't be read).",
   screens_source_missing: "The original recording is needed to make the manual materials. Check that it hasn't been moved or deleted.",
+  screens_outdated:
+    "Screen images are chosen differently in this version. To make the materials for a manual, choose this recording again under “New recording”, tick “Also take screen images for a manual”, and start. The transcription won't be redone.",
 };
 
 /** 動作条件の表示文（エンジンの文そのものから） */
@@ -383,6 +385,7 @@ export const en: Messages = {
     zipFaces: (n: number) => `${n} image${n === 1 ? " may" : "s may"} show a face. Check before you share.`,
     zipNone: "No screen sharing was found, so this can't be made",
     zipError: "The recording couldn't be read, so this can't be made",
+    zipOutdated: "Read by an earlier version, so this can't be made as is",
     savedToast: (file: string, more: number) => (more > 0 ? `Saved “${file}” and ${more} more` : `Saved “${file}”`),
   },
 

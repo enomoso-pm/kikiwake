@@ -22,8 +22,9 @@ Who said what (the transcript) and the screen that was showing at the time are l
 
 ### Kinds of sections (headings in timeline.md)
 
-- **Scene change**: most of the screen changed (another screen or slide). A candidate boundary for a chapter or section of the manual
-- **Change within the screen**: only part of the screen changed (a window opened, a menu appeared, something was typed, etc.). A candidate for one step. "What changed" tells where in the image
+- **Scene change**: much of the text and pictures on the screen changed (another screen or slide, a long scroll, etc.).
+  A candidate boundary for a chapter or section of the manual (after a scroll it may still be the same screen; check the image and the remarks)
+- **Change within the screen**: only part of the screen changed (a window opened, a menu appeared, something was typed, a range was selected in a table, etc.). A candidate for one step. "What changed" tells where in the image
 - **Same screen as before**: the screen went back to an earlier one. Use the image of the section with the number given
 - **Brief display**: something shown for a few seconds and gone (such as a notification). No image, so its content is not shown
 - **Camera only**: no screen was shared, only cameras. No image; only the remarks
