@@ -12,7 +12,8 @@ import { SetupScreen } from "../screens/SetupScreen";
 import { useApp } from "../store/state";
 import { MainPane } from "./MainPane";
 import { Sidebar } from "./Sidebar";
-import { cancelDelete, confirmDelete, setOverlay, startObjects, useObjects } from "./store";
+import { formatEstimate } from "../lib/format";
+import { cancelDelete, cancelRelang, confirmDelete, confirmRelang, setOverlay, startObjects, useObjects } from "./store";
 import { Toolbar } from "./Toolbar";
 import "./objects.css";
 
@@ -50,6 +51,27 @@ function DeleteDialog() {
     >
       <p>{t.objects.deleteBody}</p>
       <p style={{ marginTop: 10 }}>{t.objects.deleteKeeps}</p>
+    </Dialog>
+  );
+}
+
+/** 版15: 一覧の行の「…」の「〈ほかの言語〉で文字起こしし直す…」の確かめ（何をやり直し、何が残り、何が消えるか） */
+function RelangDialog() {
+  const t = useT();
+  const r = useObjects((s) => s.relang);
+  if (!r) return null;
+  const estimate = r.estimate ? formatEstimate(r.estimate.minSec, r.estimate.maxSec) : null;
+  return (
+    <Dialog
+      title={t.objects.relangTitle(r.item.name, r.to)}
+      cancelLabel={t.dialog.stay}
+      confirmLabel={t.objects.relangConfirm}
+      confirmTone="primary"
+      onCancel={cancelRelang}
+      onConfirm={confirmRelang}
+    >
+      <p>{t.objects.relangBody(estimate)}</p>
+      <p style={{ marginTop: 10 }}>{t.objects.relangKeeps}</p>
     </Dialog>
   );
 }
@@ -119,6 +141,7 @@ export default function ObjectsApp() {
       <DropHint />
       <Dialogs />
       <DeleteDialog />
+      <RelangDialog />
       <UpdateDialog />
       <Toast />
     </div>

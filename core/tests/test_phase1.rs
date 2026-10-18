@@ -2,6 +2,7 @@
 //! 3 話者カード・4 whisper.cpp → 語（src/whisper.rs の単体テスト）・5 話者判定 → 区間・6 繰り返し（src/repeat.rs）・7 確認用の手がかり。
 //! Python 版との一字一句の一致は、開発用の差分テスト（公開していない）で確かめた。ここはデータの要らない最小の確認。
 
+use kikiwake_core::lang::Lang;
 use kikiwake_core::merge::{Turn, Utterance, Word};
 use kikiwake_core::{diar, unresolved, view, wav};
 
@@ -54,7 +55,7 @@ fn speaker_cards_warnings_and_samples() {
         utt(20.0, 28.0, "話者A", "私山田と申します"), // 手がかりの名前が2種類 → mixed_voices
         utt(100.2, 100.9, "話者B", "はい"),          // 発言時間 1/101 < 2% → short_talk
     ];
-    let cards = view::speaker_cards(&utts, &turns, &audio, &d, "samples/").unwrap();
+    let cards = view::speaker_cards(&utts, &turns, &audio, &d, "samples/", Lang::Ja).unwrap();
     assert_eq!(cards.len(), 2);
     let (a, b) = (&cards[0], &cards[1]);
     assert_eq!((a.label.as_str(), a.talk_sec, a.share, a.utterances, a.first_sec), ("話者A", 100.0, 0.9901, 2, 1.0));
@@ -77,7 +78,7 @@ fn unresolved_hints_like_the_synthetic_meeting() {
     say(&mut words, "の田中ですよろしくお願いしますデザイナーの鈴木です", 7.0, 0.3); // 話者区間から 1 秒以上離れている → 確認用
     say(&mut words, "はい", 16.5, 0.5);
     let turns = [turn(0.0, 5.0, "speaker_0"), turn(16.0, 20.0, "speaker_1")];
-    let hints = unresolved::unresolved_hints(&words, &turns, None, None, "samples/").unwrap();
+    let hints = unresolved::unresolved_hints(&words, &turns, None, None, "samples/", Lang::Ja).unwrap();
     assert_eq!(hints.len(), 2);
 
     let tanaka = &hints[0];

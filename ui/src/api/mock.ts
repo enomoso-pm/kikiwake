@@ -17,6 +17,7 @@ import type {
   SaveResult,
   ScreensInfo,
   SpeakerCard,
+  SpeechLanguage,
   TalkTime,
   TranscriptView,
   AppError,
@@ -50,6 +51,8 @@ export interface MockScenario {
   savedMissing: boolean;
   /** 版10: 新しい版があるか（起動したときの確認の答え。切り替えたら読み込み直すと出る） */
   update: "none" | "available";
+  /** 版15: 録音の言語を「自動で見分ける」で始めたときに、見分けた言語（見本） */
+  speech: SpeechLanguage;
 }
 
 export const DEFAULT_SCENARIO: MockScenario = {
@@ -65,6 +68,7 @@ export const DEFAULT_SCENARIO: MockScenario = {
   applyFails: false,
   savedMissing: false,
   update: "none",
+  speech: "ja",
 };
 
 let scenario: MockScenario = { ...DEFAULT_SCENARIO };
@@ -271,6 +275,18 @@ function freshKeyOf(path: string): string {
 const transcriptDone = new Set<string>();
 const namesByPath = new Map<string, Names>();
 
+/** 版15: 録音（鍵）ごとに決めた言語（エンジンの asr_language.json）。記録が無く書き起こしがあれば日本語（1.1.x までの録音） */
+interface MockSpeech {
+  language: SpeechLanguage;
+  detected: boolean;
+}
+const speechByKey = new Map<string, MockSpeech>();
+function speechOf(key: string): MockSpeech | undefined {
+  return speechByKey.get(key) ?? (transcriptDone.has(key) ? { language: "ja", detected: false } : undefined);
+}
+const speechFields = (s: MockSpeech | undefined) =>
+  s ? { language: s.language, ...(s.detected ? { languageDetected: true } : {}) } : {};
+
 let dropAttached = false;
 
 function attachDrop() {
@@ -301,6 +317,8 @@ interface MockJob {
   timers: number[];
   running: boolean;
   diarizationKept: boolean;
+  /** 版15: この処理で決めた録音の言語 */
+  speech: MockSpeech;
 }
 
 let jobSeq = 0;
@@ -355,6 +373,8 @@ function remember(j: MockJob, status: HistoryItem["status"]) {
     sourceState: "ok",
     saved: status === "done" && Boolean(draft?.savedOnce || draft?.savedFiles?.length),
     ...(namedSpeakers ? { namedSpeakers } : {}),
+    // 版15: 書き起こしまで進んだ録音だけ（エンジンは書き起こしを始めるときに言語を記録する）
+    ...(status === "done" || j.diarizationKept ? { language: j.speech.language } : {}),
   };
   itemKeys.set(j.id, j.key);
   history = [item, ...history.filter((h) => keyOfItem(h) !== j.key)];
@@ -373,6 +393,8 @@ function jobDone(j: MockJob) {
     outDir: outDirFor(j.path),
     speakers: speakersFor().length,
     unresolvedCount: t.unresolved.length,
+    language: j.speech.language,
+    ...(j.speech.detected ? { languageDetected: true } : {}),
     ...(names && Object.keys(names).length ? { names: { ...names } } : {}),
     ...(draft ? { draft: structuredClone(draft) } : {}),
     ...(screensKeys.has(j.key) ? { screens: { ...MOCK_SCREENS } } : {}),
@@ -389,6 +411,8 @@ function deliver(j: MockJob, e: TimelineEvent) {
   if (p.stage === "transcribe" || p.stage === "merge") {
     j.diarizationKept = true;
     diarizationDone.add(j.key);
+    // 版15: 言語は書き起こしの段階の頭で決まる
+    Object.assign(p, speechFields(j.speech));
   }
   if (scenario.job === "failed" && p.stage === "transcribe" && (p.stagePercent ?? 0) > 63) {
     ev.progress.emit({ ...p, stagePercent: 63 });
@@ -487,11 +511,14 @@ function opened(item: HistoryItem, sourceAvailable: boolean): HistoryOpened {
   const draft = drafts.get(key) ?? (item.saved ? savedExampleDraft(item) : undefined);
   // 元のファイルのフォルダが無い（見つからない）録音は、エンジンと同じく保存先の既定を書類フォルダにする
   const missing = (sourceCases.get(item.jobId) ?? item.sourceState) === "missing";
+  const speech = speechOf(key) ?? { language: item.language ?? "ja", detected: false };
   return {
     jobId: item.jobId,
     outDir: missing ? osPath("/Users/example/Documents") : outDirFor(item.path),
     speakers: speakersFor().length,
     unresolvedCount: baseTranscript().unresolved.length,
+    language: speech.language,
+    ...(speech.detected ? { languageDetected: true } : {}),
     ...(names && Object.keys(names).length ? { names: { ...names } } : {}),
     ...(draft ? { draft: structuredClone(draft) } : {}),
     ...(screensKeys.has(key) ? { screens: { ...MOCK_SCREENS } } : {}),
@@ -572,11 +599,15 @@ export const mockApi: KikiwakeApi = {
     const changed = changedAt(path);
     if (changed) info.previousChanged = { processedAt: changed.processedAt };
     if (reusable) {
+      const speech = speechOf(key);
       info.previous = {
         outDir: outDirFor(path),
         diarizationReusable: true,
         processedAt: base.previous?.processedAt ?? new Date().toISOString().slice(0, 10),
         resultReusable,
+        // 版15: 前回の書き起こしの言語と、違う言語でやり直すときの目安
+        ...(speech ? { language: speech.language } : {}),
+        ...(resultReusable ? { estimateRedo: { ...base.estimate } } : {}),
       };
       // 版6: 前回の書き起こしを使い回すときは数秒（エンジンと同じ）
       if (resultReusable) info.estimate = { minSec: 1, maxSec: 10 };
@@ -591,7 +622,7 @@ export const mockApi: KikiwakeApi = {
     return info;
   },
 
-  async startJob({ path, screens }) {
+  async startJob({ path, screens, language }) {
     await wait(120);
     if (job) {
       job.running = false;
@@ -606,7 +637,12 @@ export const mockApi: KikiwakeApi = {
     const key = keyOfPath(path);
     if (screens) screensKeys.add(key);
     const reused = scenario.file === "previous" || diarizationDone.has(key);
-    const j: MockJob = { id: `job-mock-${++jobSeq}`, path, key, timers: [], running: true, diarizationKept: reused };
+    // 版15: 録音の言語（選んだ言語 → 前回の言語 → 自動で見分ける）。前回と違う言語なら書き起こしからやり直す
+    const before = speechOf(key);
+    const speech: MockSpeech = language ? { language, detected: false } : (before ?? { language: scenario.speech, detected: true });
+    if (before && before.language !== speech.language) transcriptDone.delete(key);
+    speechByKey.set(key, speech);
+    const j: MockJob = { id: `job-mock-${++jobSeq}`, path, key, timers: [], running: true, diarizationKept: reused, speech };
     job = j;
     jobPaths.set(j.id, path);
     if (transcriptDone.has(key)) {

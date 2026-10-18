@@ -1,5 +1,5 @@
 // 画面3 処理中（UI 画面仕様書 §6）。知らせはジョブの id で受け分ける
-import { STAGES, type JobDone, type JobFailed, type JobProgress, type Stage } from "@contract/types";
+import { STAGES, type JobDone, type JobFailed, type JobProgress, type SpeechLanguage, type Stage } from "@contract/types";
 import { api } from "../api";
 import { toAppError } from "../lib/errors";
 import { basename } from "../lib/format";
@@ -34,8 +34,11 @@ export function diarizationDone(j: JobView): boolean {
   return j.reused || stageIndex(j.stage) > stageIndex("diarize");
 }
 
-/** 版13: screens なら、マニュアル用に画面の絵も取り出す（省くと、前にマニュアル用で始めた録音の続きならエンジンが続ける） */
-export async function startJob(path?: string, screens?: boolean): Promise<void> {
+/**
+ * 版13: screens なら、マニュアル用に画面の絵も取り出す（省くと、前にマニュアル用で始めた録音の続きならエンジンが続ける）。
+ * 版15: language は録音の言語（省くと自動で見分ける。前回の書き起こしがあれば、その言語）
+ */
+export async function startJob(path?: string, screens?: boolean, language?: SpeechLanguage): Promise<void> {
   const s = getState();
   const target = path ?? s.file?.path;
   if (!target) return;
@@ -61,7 +64,7 @@ export async function startJob(path?: string, screens?: boolean): Promise<void> 
   setState({ job, dialog: null, startError: null });
   goTo("processing");
   try {
-    const started = await api.startJob({ path: target, ...(screens ? { screens: true } : {}) });
+    const started = await api.startJob({ path: target, ...(screens ? { screens: true } : {}), ...(language ? { language } : {}) });
     if (my !== startSeq) return;
     setState((st) => (st.job ? { job: { ...st.job, jobId: started.jobId, outDir: started.outDir } } : {}));
     const pending = early.splice(0).filter((e) => e.jobId === started.jobId);
@@ -84,7 +87,9 @@ export function progressPatch(j: JobView, p: JobProgress): Partial<JobView> | nu
       : stageIndex(stage) > stageIndex("transcribe")
         ? 100
         : j.percent;
-  return { stage, percent, etaSec: p.etaSec, reused: p.reusedDiarization };
+  // 版15: 録音の言語は、決まった知らせから（書き起こしの段階の頭）
+  const lang = p.language ? { language: p.language, languageDetected: Boolean(p.languageDetected) } : {};
+  return { stage, percent, etaSec: p.etaSec, reused: p.reusedDiarization, ...lang };
 }
 
 export function onJobProgress(p: JobProgress): void {

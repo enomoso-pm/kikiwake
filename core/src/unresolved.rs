@@ -14,6 +14,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::lang::Lang;
 use crate::merge::{self, AssignedWord, Names, Turn, UNKNOWN, Word};
 use crate::speakers::{self, CALLED, INTRO, Tally};
 use crate::{patterns, pycompat, wav};
@@ -69,8 +70,8 @@ struct Utt<'a> {
     src: Vec<usize>,
 }
 
-/// 確認用の発話 u の文字の位置 pos に出てきた名前を聞かせる範囲と、その範囲の文字。
-fn clip_for(u: &Utt, pos: usize) -> (f64, f64, String) {
+/// 確認用の発話 u の文字の位置 pos に出てきた名前を聞かせる範囲と、その範囲の文字（lang は録音の言語。文の長さに使う）。
+fn clip_for(u: &Utt, pos: usize, lang: Lang) -> (f64, f64, String) {
     let mut t = None;
     if pos > 0 {
         let raw = u.src[pos];
@@ -93,22 +94,23 @@ fn clip_for(u: &Utt, pos: usize) -> (f64, f64, String) {
         _ => (u.utt.start, 0),
     };
     let end = pycompat::min(u.utt.end, pycompat::round(start + MAX_SEC, 2));
-    let body = speakers::excerpt(pycompat::skip(&u.utt.text, offset), 70);
+    let body = speakers::excerpt(pycompat::skip(&u.utt.text, offset), speakers::excerpt_len(lang));
     (start, end, if offset > 0 { format!("…{body}") } else { body })
 }
 
 /// 画面向けの UnresolvedHint の一覧（件数の多い順）。audio と sample_dir があれば音声を `確認用_<n>.wav` に切り出す。
 ///
-/// 入力は書き起こしの語と話者区間（transcript.json と同じ発話のまとめ方をなぞり、名前の位置の時刻を語から引く）。
+/// 入力は書き起こしの語と話者区間（transcript.json と同じ発話のまとめ方をなぞり、名前の位置の時刻を語から引く）。lang は録音の言語
 pub fn unresolved_hints(
     words: &[Word],
     turns: &[Turn],
     audio: Option<&Path>,
     sample_dir: Option<&Path>,
     prefix: &str,
+    lang: Lang,
 ) -> io::Result<Vec<UnresolvedHint>> {
-    let assigned = merge::labeled_words(words, turns, 1.0);
-    let groups = merge::group_ranges(&assigned, &Names::new(), 1.5, 90.0);
+    let assigned = merge::labeled_words(words, turns, 1.0, lang);
+    let groups = merge::group_ranges(&assigned, &Names::new(), 1.5, 90.0, lang);
     let utts: Vec<Utt> = groups
         .into_iter()
         .filter(|g| !g.utt.text.is_empty())
@@ -136,13 +138,13 @@ pub fn unresolved_hints(
             prev = Some(u);
             continue;
         }
-        for (name, pos) in speakers::intro_names(&u.text, u.start <= window) {
+        for (name, pos) in speakers::intro_names(&u.text, u.start <= window, lang) {
             note(&name, INTRO, k, pos);
         }
         if let Some(p) = prev
             && p.speaker != UNKNOWN
             && u.start - p.end <= 5.0
-            && let Some(name) = speakers::called_name(&p.text)
+            && let Some(name) = speakers::called_name(&p.text, lang)
         {
             note(&name, CALLED, k, 0);
         }
@@ -156,7 +158,7 @@ pub fn unresolved_hints(
         where_.sort();
         let mut clips = Vec::new();
         for (k, pos) in where_ {
-            let (start, end, text) = clip_for(&utts[k], pos);
+            let (start, end, text) = clip_for(&utts[k], pos, lang);
             let path = match files.iter().find(|(key, _)| *key == (start, end)) {
                 Some((_, p)) => p.clone(),
                 None => {

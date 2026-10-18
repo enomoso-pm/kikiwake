@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 import type { HistoryItem } from "@contract/types";
 import { ErrorBand } from "../components/ErrorBand";
-import { useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
 import { basename, formatClock, formatMonthDay } from "../lib/format";
 import { navigateStep } from "../store/naming";
 import { useApp } from "../store/state";
@@ -93,6 +93,9 @@ export function RecordingHeader({ entry, tab }: { entry: Entry | null; tab: Tab 
   const notice = useObjects((s) => s.notice);
   const openError = useObjects((s) => s.openError);
   const { live, playable } = useLive(entry);
+  const locale = useLocale((s) => s.locale);
+  // 版15: 録音の言語は、画面の言語と違うときだけ出す（日本語の画面で日本語の録音には出さない。表示を増やさないため）
+  const speech = (l: string | undefined) => (l && l !== locale ? o.speechLanguage(l === "en" ? "en" : "ja") : "");
 
   const open = Boolean(entry?.kind === "history" && job?.status === "done" && job.jobId === entry.item.jobId && playable !== null);
 
@@ -105,10 +108,11 @@ export function RecordingHeader({ entry, tab }: { entry: Entry | null; tab: Tab 
       day ? o.processedOn(day) : "",
       it.durationSec > 0 ? formatClock(it.durationSec) : "",
       it.speakers != null ? o.speakers(it.speakers, namedOf(entry, live)) : "",
+      speech(it.language),
     ];
     path = it.path;
   } else if (entry?.kind === "running") {
-    meta = [entry.durationSec > 0 ? formatClock(entry.durationSec) : "", t.engine.stage(entry.job.stage)];
+    meta = [entry.durationSec > 0 ? formatClock(entry.durationSec) : "", t.engine.stage(entry.job.stage), speech(entry.job.language)];
     path = entry.path;
   } else if (entry?.kind === "queued") {
     meta = [entry.item.durationSec > 0 ? formatClock(entry.item.durationSec) : ""];

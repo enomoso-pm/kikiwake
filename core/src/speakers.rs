@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::lang::Lang;
 use crate::merge::{self, Meta, Turn, UNKNOWN, Utterance};
 use crate::{patterns, pycompat, pyjson, wav};
 
@@ -59,8 +60,12 @@ impl Tally {
     }
 }
 
-/// 自己紹介の形に当てはまる名前（強い形はどこでも、弱い形は冒頭付近だけ）。見つけた順に (名前, 名前の始まりの文字位置)
-pub(crate) fn intro_names(text: &str, weak: bool) -> Vec<(String, usize)> {
+/// 自己紹介の形に当てはまる名前（強い形はどこでも、弱い形は冒頭付近だけ）。見つけた順に (名前, 名前の始まりの文字位置)。
+/// lang は録音の言語（英語は 2026-10-18 に足した。日本語は移植元と同じ）
+pub(crate) fn intro_names(text: &str, weak: bool, lang: Lang) -> Vec<(String, usize)> {
+    if lang == Lang::En {
+        return intro_names_en(text, weak);
+    }
     let mut out = Vec::new();
     let mut scan = |rx: &regex::Regex| {
         for c in rx.captures_iter(text) {
@@ -81,13 +86,70 @@ pub(crate) fn intro_names(text: &str, weak: bool) -> Vec<(String, usize)> {
     out
 }
 
-/// 直前の発言の末尾40字で呼ばれた名前（最後のもの）
-pub(crate) fn called_name(prev_text: &str) -> Option<String> {
+/// 直前の発言の末尾40字で呼ばれた名前（最後のもの）。英語は末尾 80 字（同じ中身でも字数が多いため）
+pub(crate) fn called_name(prev_text: &str, lang: Lang) -> Option<String> {
+    if lang == Lang::En {
+        return called_name_en(prev_text);
+    }
     patterns::ADDRESS
         .captures_iter(pycompat::tail(prev_text, 40))
         .map(|c| c[1].to_string())
         .filter(|n| !is_stop(n))
         .last()
+}
+
+/// 英語の自己紹介（patterns の STRONG_INTRO_EN・WEAK_INTRO_EN）。見つけた順に (名前, 名前の始まりの文字位置)
+fn intro_names_en(text: &str, weak: bool) -> Vec<(String, usize)> {
+    let mut found: Vec<(usize, String)> = Vec::new();
+    let mut scan = |rx: &regex::Regex| {
+        for c in rx.captures_iter(text) {
+            let g = c.get(1).expect("名前の括弧");
+            if let Some((off, name)) = patterns::clean_name_en(g.as_str()) {
+                let pos = pycompat::char_index(text, g.start() + off);
+                if !found.iter().any(|(p, _)| *p == pos) {
+                    found.push((pos, name));
+                }
+            }
+        }
+    };
+    for rx in patterns::STRONG_INTRO_EN.iter() {
+        scan(rx);
+    }
+    if weak {
+        scan(&patterns::WEAK_INTRO_EN);
+    }
+    found.sort_by_key(|(p, _)| *p);
+    found.into_iter().map(|(p, n)| (n, p)).collect()
+}
+
+/// 英語の呼びかけ: 直前の発言の末尾 80 字（途中で切れた語は除く）で呼ばれた名前（いちばん後ろのもの）。
+/// 「Tom, how did …」「…, Sarah?」「Tanaka-san」。お礼・あいさつのあとの名前（"Thanks, Tom."）は数えない
+fn called_name_en(prev_text: &str) -> Option<String> {
+    let full = prev_text.trim_end();
+    let mut tail = pycompat::tail(full, 80);
+    if tail.len() < full.len() && !full[..full.len() - tail.len()].ends_with(char::is_whitespace) {
+        tail = tail.split_once(' ').map_or("", |(_, rest)| rest); // 途中で切れた語を除く
+    }
+    let mut cands: Vec<(usize, String)> = Vec::new();
+    for c in patterns::ADDRESS_EN.captures_iter(tail) {
+        let g = c.get(1).expect("名前の括弧");
+        cands.push((g.start(), g.as_str().to_string()));
+    }
+    if let Some(c) = patterns::ADDRESS_END_EN.captures(tail) {
+        let g = c.get(1).expect("名前の括弧");
+        if !patterns::THANKS_EN.is_match(&tail[..c.get(0).expect("一致").start()]) {
+            cands.push((g.start(), g.as_str().to_string()));
+        }
+    }
+    for c in patterns::ADDRESS_SAN_EN.captures_iter(tail) {
+        let g = c.get(1).expect("名前の括弧");
+        cands.push((g.start(), g.as_str().to_string()));
+    }
+    cands
+        .into_iter()
+        .filter_map(|(p, n)| patterns::clean_name_en(&n).map(|(off, name)| (p + off, name)))
+        .max_by_key(|(p, _)| *p)
+        .map(|(_, n)| n)
 }
 
 /// 冒頭付近とみなす範囲（秒）: max(intro_window, 全体の15%)。全体は発話の終わりの最大値
@@ -96,8 +158,8 @@ pub(crate) fn intro_limit(utts: &[Utterance], intro_window: f64) -> f64 {
     pycompat::max(intro_window, dur.unwrap_or(0.0) * 0.15)
 }
 
-/// 話者ラベル → [候補名と、手がかりの種類ごとの件数]（件数の多い順）。既定は intro_window 600 秒
-pub fn name_hints(utts: &[Utterance], intro_window: f64) -> Hints {
+/// 話者ラベル → [候補名と、手がかりの種類ごとの件数]（件数の多い順）。既定は intro_window 600 秒。lang は録音の言語
+pub fn name_hints(utts: &[Utterance], intro_window: f64, lang: Lang) -> Hints {
     let window = intro_limit(utts, intro_window);
     let mut hits: IndexMap<String, Tally> = IndexMap::new();
     let mut prev: Option<&Utterance> = None;
@@ -107,14 +169,14 @@ pub fn name_hints(utts: &[Utterance], intro_window: f64) -> Hints {
             prev = Some(u);
             continue;
         }
-        for (name, _) in intro_names(&u.text, u.start <= window) {
+        for (name, _) in intro_names(&u.text, u.start <= window, lang) {
             hits.entry(spk.clone()).or_default().add(&name, INTRO);
         }
         if let Some(p) = prev
             && p.speaker != *spk
             && p.speaker != UNKNOWN
             && u.start - p.end <= 5.0
-            && let Some(name) = called_name(&p.text)
+            && let Some(name) = called_name(&p.text, lang)
         {
             hits.entry(spk.clone()).or_default().add(&name, CALLED);
         }
@@ -160,6 +222,15 @@ pub fn pick_samples(utts: &[Utterance], n: usize, min_sec: f64, max_sec: f64, ta
     picked
 }
 
+/// 画面に出すサンプル・確認用の手がかりの文の長さ（字）。日本語は 70 字（移植元と同じ）。英語は 110 字
+/// （2026-10-18。70 字では 2 行ほどで途切れ、日本語の 70 字（3〜4 行）と同じくらいの量が見えなかった）
+pub fn excerpt_len(lang: Lang) -> usize {
+    match lang {
+        Lang::Ja => 70,
+        Lang::En => 110,
+    }
+}
+
 /// 発言の冒頭 n 字（超えたら末尾に「…」）
 pub fn excerpt(text: &str, n: usize) -> String {
     if pycompat::char_len(text) <= n { text.to_string() } else { format!("{}…", pycompat::head(text, n)) }
@@ -193,7 +264,7 @@ pub fn write_speakers(out_dir: &Path) -> io::Result<PathBuf> {
         *counts.entry(&u.speaker).or_insert(0) += 1;
         first.entry(&u.speaker).or_insert(u.start);
     }
-    let hints = name_hints(&utts, 600.0);
+    let hints = name_hints(&utts, 600.0, meta.speech_lang());
     let samples = pick_samples(&utts, 3, 3.0, 20.0, 8.0);
 
     let sdir = out_dir.join("samples");
@@ -263,4 +334,65 @@ pub fn write_speakers(out_dir: &Path) -> io::Result<PathBuf> {
     fs::write(&path, lines.join("\n"))?;
     fs::write(out_dir.join("speaker_hints.json"), pyjson::dumps(&hints))?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(text: &str, weak: bool) -> Vec<String> {
+        intro_names(text, weak, Lang::En).into_iter().map(|(n, _)| n).collect()
+    }
+
+    /// 英語の自己紹介（2026-10-18。英語の合成会議の 4 通りの形と、間違えやすい形）
+    #[test]
+    fn english_intros() {
+        assert_eq!(names("Thank you all for joining today. I'm Matsumoto, the project manager.", false), ["Matsumoto"]);
+        assert_eq!(names("Thanks for having me. My name is David, from the client side.", false), ["David"]);
+        assert_eq!(names("This is Tom from engineering. Nice to meet you all.", false), ["Tom"]);
+        assert_eq!(names("Hi, Emily here. I'm the designer working on the screens.", false), ["Emily"]);
+        assert_eq!(names("Emily here. I'm the designer", false), ["Emily"]);
+        assert_eq!(names("My name is Kenji Matsumoto and I lead the team.", false), ["Kenji Matsumoto"]);
+        // 弱い形は冒頭付近だけ
+        assert_eq!(names("I'm Laura and I'm the project manager.", true), ["Laura"]);
+        assert!(names("I'm Laura and I'm the project manager.", false).is_empty());
+        // 名前ではないもの
+        for t in ["I'm Japanese, the team is in Tokyo.", "I'm sure this is fine.", "This is great.", "Everyone here.", "I'm not sure, to be honest.", "This is Monday, right?"] {
+            assert!(names(t, true).is_empty(), "{t}");
+        }
+        // 名乗った位置（確認用の手がかりの音声の頭に使う）
+        assert_eq!(intro_names("Hi, Emily here.", false, Lang::En), [("Emily".to_string(), 4)]);
+    }
+
+    /// 英語の呼びかけ（直前の人の発言の終わりの名前）
+    #[test]
+    fn english_called_names() {
+        let c = |t: &str| called_name(t, Lang::En);
+        assert_eq!(c("Let's start with the action items from last time. Tom, how did the API performance test go?").as_deref(), Some("Tom"));
+        assert_eq!(c("Sounds good. Emily, could you put together a prototype of that screen?").as_deref(), Some("Emily"));
+        assert_eq!(
+            c("Emily will build the confirmation screen prototype. And David, could you send us a list of the operating rules for each store?").as_deref(),
+            Some("David")
+        );
+        assert_eq!(c("So what do you think, Sarah?").as_deref(), Some("Sarah"));
+        assert_eq!(c("Tanaka-san, what do you think about the schedule?").as_deref(), Some("Tanaka"));
+        // お礼・あいさつのあとの名前は、呼んだ人が次に話すとは限らない
+        assert_eq!(c("That was really helpful. Thanks, Tom."), None);
+        assert_eq!(c("Thank you, everyone."), None);
+        // 名前でない語
+        assert_eq!(c("Okay, so, what do you think?"), None);
+        // 間投詞・つなぎの言葉・あいさつ（文の頭で大文字になり、読点のあとに I・you・how などが続く）
+        for t in [
+            "That's the plan. Oh, I see what you mean.",
+            "Wow, how did you do that?",
+            "Morning, how was your weekend?",
+            "Today, I want to go over the budget.",
+            "Honestly, I think we should wait.",
+            "Mm-hmm, you're right.",
+        ] {
+            assert_eq!(c(t), None, "{t}");
+        }
+        // 日本語は今までどおり（末尾 40 字の「〇〇さん」）
+        assert_eq!(called_name("では次に田中さん、お願いします", Lang::Ja).as_deref(), Some("田中"));
+    }
 }

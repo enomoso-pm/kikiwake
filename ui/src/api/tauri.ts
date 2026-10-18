@@ -42,7 +42,8 @@ export const tauriApi: KikiwakeApi = {
 
   // ---- 画面3 処理中 ----
   // 版13: screens（マニュアル用に、画面の絵も取り出す）
-  startJob: (req) => invoke("start_job", { path: req.path, screens: req.screens ?? false }),
+  // 版15: language は録音の言語（省くと自動で見分ける）
+  startJob: (req) => invoke("start_job", { path: req.path, screens: req.screens ?? false, language: req.language ?? null }),
   cancelJob: (jobId) => invoke("cancel_job", { jobId }),
   onJobProgress: (cb) => on("job-progress", cb),
   onJobDone: (cb) => on("job-done", cb),

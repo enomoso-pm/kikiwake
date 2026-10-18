@@ -214,6 +214,11 @@ export default function DevPanel() {
             <Option label="途中で失敗" active={sc.job === "failed"} onClick={() => (set({ job: "failed" }), void devJump("processing"))} />
           </Group>
 
+          <Group title="録音の言語（「自動で見分ける」で始めたとき。版15）">
+            <Option label="日本語" active={sc.speech === "ja"} onClick={() => set({ speech: "ja" })} />
+            <Option label="英語" active={sc.speech === "en"} onClick={() => set({ speech: "en" })} />
+          </Group>
+
           <Group title="処理の再生速度">
             <Option label="60倍" active={sc.speed === 60} onClick={() => set({ speed: 60 })} />
             <Option label="600倍" active={sc.speed === 600} onClick={() => set({ speed: 600 })} />

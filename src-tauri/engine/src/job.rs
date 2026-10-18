@@ -238,6 +238,10 @@ struct Ctx<'a> {
     scan_cancel: Arc<Cancel>,
     /// 版13: マニュアル用に、画面の絵も取り出す
     screens: bool,
+    /// 版15: 画面で選んだ録音の言語（None は自動で見分ける）
+    language: Option<Lang>,
+    /// 版15: 決めた録音の言語（話者の判定のあとに決まる）
+    speech: Mutex<Option<SpeechLanguage>>,
     t0: Instant,
     reused: bool,
     last_emit: Mutex<Option<Instant>>,
@@ -250,6 +254,7 @@ impl Ctx<'_> {
             return;
         }
         *last = Some(Instant::now());
+        let speech = *self.speech.lock().unwrap();
         self.engine.events.job_progress(&JobProgress {
             job_id: self.job.id.clone(),
             stage,
@@ -257,6 +262,8 @@ impl Ctx<'_> {
             eta_sec: eta.map(|e| e.max(0.0).round() as u64),
             elapsed_sec: self.t0.elapsed().as_secs(),
             reused_diarization: self.reused,
+            language: speech.map(|s| s.language),
+            language_detected: speech.is_some_and(|s| s.detected),
         });
     }
 
@@ -281,11 +288,12 @@ impl Engine {
 
     /// 処理を始める（別のスレッドで進め、途中経過・終わり・失敗はイベントで知らせる）。同時に動かすのは1本だけ
     pub fn start_job(self: &Arc<Self>, path: &Path) -> Result<JobStarted, AppError> {
-        self.start_job_with(path, false)
+        self.start_job_with(path, false, None)
     }
 
-    /// 版13: screens なら、マニュアル用に画面の絵も取り出す（文字起こしと同時に。screens.rs）
-    pub fn start_job_with(self: &Arc<Self>, path: &Path, screens: bool) -> Result<JobStarted, AppError> {
+    /// 版13: screens なら、マニュアル用に画面の絵も取り出す（文字起こしと同時に。screens.rs）。
+    /// 版15: language は録音の言語（None は自動で見分ける。前に書いた・書きかけの書き起こしがあれば、その言語）
+    pub fn start_job_with(self: &Arc<Self>, path: &Path, screens: bool, language: Option<Lang>) -> Result<JobStarted, AppError> {
         let (id, src) = identify(path)?;
         let mut slot = self.job.lock().unwrap();
         if let Some(r) = slot.as_mut() {
@@ -324,7 +332,7 @@ impl Engine {
         let me = Arc::clone(self);
         let (c2, s2, e2, j2, source) =
             (Arc::clone(&cancel), Arc::clone(&scan_cancel), Arc::clone(&ending), job.clone(), PathBuf::from(&src.path));
-        let thread = std::thread::spawn(move || me.run(j2, source, c2, s2, e2, screens));
+        let thread = std::thread::spawn(move || me.run(j2, source, c2, s2, e2, screens, language));
         *slot = Some(Running { id: id.clone(), cancel, scan_cancel, thread: Some(thread), ending });
         Ok(JobStarted { job_id: id, out_dir })
     }
@@ -433,7 +441,17 @@ impl Engine {
         }
     }
 
-    fn run(&self, job: JobDir, source: PathBuf, cancel: Arc<Cancel>, scan_cancel: Arc<Cancel>, ending: Arc<AtomicBool>, screens: bool) {
+    #[allow(clippy::too_many_arguments)]
+    fn run(
+        &self,
+        job: JobDir,
+        source: PathBuf,
+        cancel: Arc<Cancel>,
+        scan_cancel: Arc<Cancel>,
+        ending: Arc<AtomicBool>,
+        screens: bool,
+        language: Option<Lang>,
+    ) {
         let _awake = KeepAwake::start();
         let ctx = Ctx {
             engine: self,
@@ -442,6 +460,8 @@ impl Engine {
             cancel,
             scan_cancel: Arc::clone(&scan_cancel),
             screens,
+            language,
+            speech: Mutex::new(None),
             t0: Instant::now(),
             reused: false,
             last_emit: Mutex::new(None),
@@ -539,9 +559,14 @@ impl Engine {
         // 区切りの知らせが書き始めの 1〜2 分だけ・重複して出る）。繰り返しは書き起こしが終わってから JSON で見つける（知らせて続ける）。
         // 90 分を超える録音は、無音の所で約 1 時間ずつに分けて書き、中止しても書き終えた部分から再開する（chunk_plan）
         // 段階の始まりの知らせは transcribe_plan の最初の知らせ（再開なら書き終えた分の％。％は戻らない）
+        // 版15: 録音の言語を決める（画面で選んだ言語 → 前に決めた言語（書き起こしがあれば） → 話している所から自動で見分ける）。
+        // 前の書き起こしと違う言語なら、書き起こしからやり直す（話者の判定は使い回す）
+        let (speech, changed) = tryj!(self.decide_language(&ctx, &audio, &turns));
+        *ctx.speech.lock().unwrap() = Some(speech);
+        let lang = speech.language;
         let (over, size) = chunk_limits();
         let plan = chunk_plan(duration, &turns, over, size);
-        tryj!(prepare_asr(paths, &ctx.job, &plan));
+        tryj!(prepare_asr(paths, &ctx.job, &plan, lang, changed));
         let t_tr = Instant::now();
         // 最後に届いた全体の％・その時刻・次の刻みまでの幅（全体の％）。base はこの回に始めたときの％（再開なら書き終えた分）
         let step = Mutex::new((0.0_f64, Instant::now(), 4.9_f64));
@@ -568,7 +593,7 @@ impl Engine {
                     progress(ctx, false);
                 }
             });
-            let r = transcribe_plan(paths, &ctx.job, &audio, duration, &plan, &ctx.cancel, |pr| {
+            let r = transcribe_plan(paths, &ctx.job, &audio, duration, &plan, lang, &ctx.cancel, |pr| {
                 *base.lock().unwrap() = pr.resumed_from;
                 *step.lock().unwrap() = (pr.overall, Instant::now(), pr.gap);
                 progress(ctx, true);
@@ -621,6 +646,7 @@ impl Engine {
             asr: Some(ASR_NAME.into()),
             created: Some(today()),
             audio: Some(audio.display().to_string()),
+            language: Some(lang),
         };
         tryj!(write_json(&ctx.job.file("meta.json"), &meta));
         let out = tryj!(build_views(&ctx.job, &words, &turns, &meta, &repeats));
@@ -631,6 +657,8 @@ impl Engine {
             out_dir: default_out_dir(&ctx.source).display().to_string(),
             speakers: out.0,
             unresolved_count: out.1,
+            language: lang,
+            language_detected: speech.detected,
             names: crate::results::names_of(&ctx.job),
             // 版8: 閉じたときの状態（書き起こしが変わっていなければ）
             draft: crate::history::load_draft(&ctx.job),
@@ -721,13 +749,15 @@ fn read_segments(json: &Path) -> Result<Vec<whisper::Segment>, AppError> {
 }
 
 /// 分け方どおりに書き起こし、元の録音の時刻の区切りの並びを返す。分けないときは asr.json、分けたときは asr_<n>.json
-/// （分け方は asr_plan.json に残し、同じ分け方で書き終えた部分は書き直さない）
+/// （分け方は asr_plan.json に残し、同じ分け方で書き終えた部分は書き直さない）。分けた部分もすべて同じ言語で書く
+#[allow(clippy::too_many_arguments)]
 fn transcribe_plan(
     paths: &Paths,
     job: &JobDir,
     audio: &Path,
     duration: f64,
     plan: &[(f64, f64)],
+    lang: Lang,
     cancel: &Cancel,
     mut on_progress: impl FnMut(TrProgress) + Send,
 ) -> Result<Vec<whisper::Segment>, AppError> {
@@ -744,7 +774,7 @@ fn transcribe_plan(
             }
         }
         on_progress(TrProgress { overall: 0.0, gap: 4.9, resumed_from: 0.0 });
-        let part = engines::transcribe(paths, audio, &job.file("asr.part"), cancel, |p| {
+        let part = engines::transcribe(paths, audio, &job.file("asr.part"), lang, cancel, |p| {
             on_progress(TrProgress { overall: p, gap: 4.9, resumed_from: 0.0 })
         })?;
         fs::rename(&part, &json).map_err(|e| io_error(&e, "asr.json"))?;
@@ -775,7 +805,7 @@ fn transcribe_plan(
             let wav = job.file("asr_chunk.wav");
             wav::cut(audio, s, e, &wav, 0.0, e - s + 0.001).map_err(|er| io_error(&er, "書き起こしの部分の WAV"))?;
             let stem = job.file(&format!("asr_{i:02}.part"));
-            let r = engines::transcribe(paths, &wav, &stem, cancel, |p| {
+            let r = engines::transcribe(paths, &wav, &stem, lang, cancel, |p| {
                 on_progress(TrProgress { overall: done + p * weight, gap: (4.9 * weight).max(0.01), resumed_from })
             });
             let _ = fs::remove_file(&wav);
@@ -797,8 +827,9 @@ fn transcribe_plan(
 // 同じ録音をもう一度始めたとき、同じ設定で書き終えた書き起こしがあれば、書き起こしをやり直さずに1秒ほどで名前付けへ進む
 // （今までは 90 分以下の録音は書き起こしからやり直していた。68 分で約 15 分）
 
-/// 書き起こしの設定の目印（whisper-cli の中身・引数・モデルの大きさ）。アプリの更新でエンジンや設定が変わったら、前の書き起こしは使わない
-pub fn asr_settings(paths: &Paths) -> String {
+/// 書き起こしの設定の目印（whisper-cli の中身・引数・モデルの大きさ）。アプリの更新でエンジンや設定が変わったら、前の書き起こしは使わない。
+/// 引数には録音の言語が入る（日本語は前の版と同じ目印）
+pub fn asr_settings(paths: &Paths, lang: Lang) -> String {
     let cli = paths
         .engine("whisper-cli")
         .ok()
@@ -806,7 +837,7 @@ pub fn asr_settings(paths: &Paths) -> String {
         .map(|b| Sha256::digest(&b).iter().take(8).map(|x| format!("{x:02x}")).collect::<String>())
         .unwrap_or_default();
     let model = fs::metadata(paths.models.join(engines::ASR_MODEL_FILE)).map(|m| m.len()).unwrap_or(0);
-    format!("whisper-cli {cli} / {} {model} / {}", engines::ASR_MODEL_FILE, engines::ASR_ARGS.join(" "))
+    format!("whisper-cli {cli} / {} {model} / {}", engines::ASR_MODEL_FILE, engines::asr_args(lang).join(" "))
 }
 
 /// 書き起こしを書き終えているか（今の分け方で、全部の部分がそろっている）
@@ -821,11 +852,12 @@ fn asr_complete(job: &JobDir, plan: &[(f64, f64)]) -> bool {
 /// 書き起こしを始める前に: 設定の目印が前と違い、まだ書き終えていなければ、書きかけ（asr.json・分けたもの）を消して、今の目印を書く。
 /// 書き終えた書き起こしは、設定の目印が違っても（アプリを更新してエンジンを作り直しても）そのまま使う（2026-09-27。
 /// 作業フォルダは履歴なので、更新のたびに開き直すと書き起こしをやり直す（68 分で約 15 分・手直しも合わなくなる）のを避ける）。
-/// 目印のファイルは、書き起こしたときのエンジンの記録として残す
-fn prepare_asr(paths: &Paths, job: &JobDir, plan: &[(f64, f64)]) -> Result<(), AppError> {
-    let now = asr_settings(paths);
+/// 目印のファイルは、書き起こしたときのエンジンの記録として残す。
+/// 版15: 前の書き起こしと違う言語で始めたとき（lang_changed）は、書き終えていても消して書き直す
+fn prepare_asr(paths: &Paths, job: &JobDir, plan: &[(f64, f64)], lang: Lang, lang_changed: bool) -> Result<(), AppError> {
+    let now = asr_settings(paths, lang);
     let same = fs::read_to_string(job.file("asr_settings.txt")).ok().as_deref() == Some(now.as_str());
-    if !same && !asr_complete(job, plan) {
+    if lang_changed || (!same && !asr_complete(job, plan)) {
         let _ = fs::remove_file(job.file("asr.json"));
         let _ = fs::remove_file(job.file("asr_plan.json"));
         for i in 0..100 {
@@ -834,6 +866,141 @@ fn prepare_asr(paths: &Paths, job: &JobDir, plan: &[(f64, f64)]) -> Result<(), A
         fs::write(job.file("asr_settings.txt"), &now).map_err(|e| io_error(&e, "asr_settings.txt"))?;
     }
     Ok(())
+}
+
+// ---- 録音の言語（版15。2026-10-18 決定: 自動で見分ける＋選び直せる。日本語と英語） ----------------------------
+// 画面は「自動で見分ける」（初め）・日本語・English から選ぶ。自動なら、話者の判定のあとに、話している所から
+// 10 秒ずつ 3 か所（話している時間の 20%・50%・80% の位置）をつないだ 30 秒を whisper-cli -dl に渡して決める。
+// whisper-cli -dl は渡した音声の頭の 30 秒だけを聞くので、録音をそのまま渡すと頭の無言・待ち時間で外れる
+// （68 分の日本語の実録音の頭 30 秒はノルウェー語・0.81 と判定。話している所から選ぶと日本語・0.93、5 分ごとの 30 秒は 12 か所とも日本語・0.975 以上）。
+// 決めた言語は作業フォルダの asr_language.json に残し、書き起こしの使い回しと続きからの再開は同じ言語のときだけにする。
+// 記録の無い書き起こし（1.1.x までの版）は日本語
+
+/// 録音の言語の記録のファイル（作業フォルダ）
+const LANGUAGE_FILE: &str = "asr_language.json";
+
+/// 決めた録音の言語（asr_language.json）
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechLanguage {
+    pub language: Lang,
+    /// 自動で見分けて決めた（画面で選んだ・見分けられずに画面の言語にした、は false）
+    #[serde(default)]
+    pub detected: bool,
+}
+
+/// 書き起こしのファイル（書き終えた・書きかけ）があるか
+fn has_transcript(job: &JobDir) -> bool {
+    job.file("asr.json").is_file() || job.file("asr_plan.json").is_file() || (0..100).any(|i| job.file(&format!("asr_{i:02}.json")).is_file())
+}
+
+/// この録音に決めた言語（前の版の書き起こしで記録が無ければ日本語）。まだ決めていなければ None
+pub fn transcript_language(job: &JobDir) -> Option<SpeechLanguage> {
+    if let Ok(s) = merge::load_json::<SpeechLanguage>(&job.file(LANGUAGE_FILE)) {
+        return Some(s);
+    }
+    has_transcript(job).then_some(SpeechLanguage { language: Lang::Ja, detected: false })
+}
+
+/// 言語を見分けるために聞かせる所（元の録音の時刻の範囲）: 話している所（話者の判定の区間の和集合）の累計で
+/// 20%・50%・80% の位置を真ん中に 10 秒ずつ。話している所が 30 秒に満たなければ全部
+pub fn language_probe(turns: &[Turn]) -> Vec<(f64, f64)> {
+    let mut spans: Vec<(f64, f64)> = turns.iter().filter(|t| t.end > t.start).map(|t| (t.start, t.end)).collect();
+    spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut merged: Vec<(f64, f64)> = Vec::new();
+    for (a, b) in spans {
+        match merged.last_mut() {
+            Some(l) if a <= l.1 => l.1 = l.1.max(b),
+            _ => merged.push((a, b)),
+        }
+    }
+    let total: f64 = merged.iter().map(|(a, b)| b - a).sum();
+    // 話している所の累計で from 秒の位置から len 秒ぶん（元の録音の時刻に直す）
+    let take = |from: f64, len: f64| -> Vec<(f64, f64)> {
+        let (mut out, mut acc, mut need) = (Vec::new(), 0.0, len);
+        for &(a, b) in &merged {
+            if acc + (b - a) <= from {
+                acc += b - a;
+                continue;
+            }
+            let s = a + (from - acc).max(0.0);
+            let e = b.min(s + need);
+            if e > s {
+                out.push((s, e));
+                need -= e - s;
+            }
+            acc += b - a;
+            if need <= 1e-6 {
+                break;
+            }
+        }
+        out
+    };
+    if total <= 30.0 {
+        return merged;
+    }
+    [0.2, 0.5, 0.8].iter().flat_map(|f| take((total * f - 5.0).max(0.0), 10.0)).collect()
+}
+
+impl Engine {
+    /// 録音の言語を決める。返すのは（決めた言語、前の書き起こしと違う言語か）。決めたら asr_language.json に書く
+    fn decide_language(&self, ctx: &Ctx, audio: &Path, turns: &[Turn]) -> Result<(SpeechLanguage, bool), AppError> {
+        let before = transcript_language(&ctx.job);
+        let speech = match (ctx.language, before) {
+            (Some(l), _) => SpeechLanguage { language: l, detected: false },
+            (None, Some(b)) => b,
+            (None, None) => {
+                // 見分けている間（数秒。AI モデルを読み込み直すと 20 秒ほど）は書き起こしの段階の 0%（書き起こしはまだ無いので％は戻らない）。
+                // 使い回し・続きからのときは知らせない（段階の始まりは transcribe_plan の、書き終えた分の％の知らせ）
+                ctx.emit(Stage::Transcribe, Some(0.0), None, true);
+                self.detect_language(ctx, audio, turns)?
+            }
+        };
+        let changed = before.is_some_and(|b| b.language != speech.language) && has_transcript(&ctx.job);
+        if before != Some(speech) {
+            write_json(&ctx.job.file(LANGUAGE_FILE), &speech)?;
+        }
+        ctx.log(&format!(
+            "録音の言語 {}（{}）",
+            speech.language.as_str(),
+            match (ctx.language, before) {
+                (Some(_), _) => "選んだ",
+                (None, Some(_)) => "前に決めた",
+                (None, None) if speech.detected => "見分けた",
+                (None, None) => "見分けられず画面の言語",
+            }
+        ));
+        Ok((speech, changed))
+    }
+
+    /// 話している所から切り出して見分ける。見分けられない（話している所が無い・日本語と英語のどちらでもない・エンジンが失敗した）ときは画面の言語
+    fn detect_language(&self, ctx: &Ctx, audio: &Path, turns: &[Turn]) -> Result<SpeechLanguage, AppError> {
+        let fallback = SpeechLanguage { language: self.locale(), detected: false };
+        let ranges = language_probe(turns);
+        if ranges.is_empty() {
+            return Ok(fallback);
+        }
+        let wav_p = ctx.job.file("language_probe.wav");
+        wav::cut_ranges(audio, &ranges, &wav_p).map_err(|e| io_error(&e, "language_probe.wav"))?;
+        let t = Instant::now();
+        let r = engines::detect_language(&self.paths, &wav_p, &ctx.cancel);
+        let _ = fs::remove_file(&wav_p);
+        match r {
+            Err(e) if e.is_cancelled() => Err(e),
+            Err(e) => {
+                ctx.log(&format!("言語を見分けられない {e}"));
+                Ok(fallback)
+            }
+            Ok(found) => {
+                ctx.log(&format!(
+                    "言語の判定 {}（{:.1} 秒）",
+                    found.as_ref().map(|(c, p)| format!("{c} {p:.3}")).unwrap_or_else(|| "なし".into()),
+                    t.elapsed().as_secs_f64()
+                ));
+                Ok(found.and_then(|(c, _)| Lang::parse(&c)).map(|l| SpeechLanguage { language: l, detected: true }).unwrap_or(fallback))
+            }
+        }
+    }
 }
 
 /// 前回の書き起こしを書き終えていて、始めると書き起こしをやり直さずに済むか（ファイルの確認で画面に知らせる。FileInfo.previous.resultReusable）。
@@ -876,14 +1043,16 @@ pub fn build_views(job: &JobDir, words: &[Word], turns: &[Turn], meta: &Meta, re
     let _ = fs::remove_dir_all(&sdir);
     fs::create_dir_all(&sdir).map_err(|e| io_error(&e, "samples"))?;
     let prefix = format!("{}/", sdir.display());
-    let utts = merge::build_transcript(words, turns, None, 1.0, 1.5);
-    let cards = view::speaker_cards(&utts, turns, &audio, &sdir, &prefix).map_err(|e| io_error(&e, "話者カード"))?;
+    // 版15: 録音の言語（行のまとめ方・誤認識文のよけ方・名前の手がかり）。meta.json の language（無ければ日本語）
+    let speech = meta.speech_lang();
+    let utts = merge::build_transcript(words, turns, None, 1.0, 1.5, speech);
+    let cards = view::speaker_cards(&utts, turns, &audio, &sdir, &prefix, speech).map_err(|e| io_error(&e, "話者カード"))?;
     write_json(&job.file("speakers.json"), &cards)?;
-    let hints = unresolved::unresolved_hints(words, turns, Some(audio.as_path()), Some(sdir.as_path()), &prefix)
+    let hints = unresolved::unresolved_hints(words, turns, Some(audio.as_path()), Some(sdir.as_path()), &prefix, speech)
         .map_err(|e| io_error(&e, "確認用の手がかり"))?;
     write_json(&job.file("unresolved_hints.json"), &hints)?;
     let tt = merge::talk_time(turns, None);
-    let plain: Vec<lines::Line> = lines::lines(words, turns, None).into_iter().map(|r| r.line).collect();
+    let plain: Vec<lines::Line> = lines::lines(words, turns, None, speech).into_iter().map(|r| r.line).collect();
     let v = view::transcript_view(&plain, &tt, meta, meta.duration.unwrap_or(0.0), false);
     write_json(&job.file("view_transcript.json"), &v)?;
     let recs: Vec<RepeatRecord> = repeats
@@ -1116,7 +1285,7 @@ mod tests {
         write_json(&job.diarization(), &vec![turn(0.0, 4000.0)]).unwrap();
         let single = [(0.0, 4068.0)];
         assert!(!transcript_reusable(&paths, &job)); // 書き起こしがまだ無い
-        prepare_asr(&paths, &job, &single).unwrap();
+        prepare_asr(&paths, &job, &single, Lang::Ja, false).unwrap();
         fs::write(job.file("asr.json"), b"{}").unwrap();
         assert!(transcript_reusable(&paths, &job));
         // 使い終えて取り出した音声を消しても使い回せる（始めると取り出し直す）
@@ -1126,15 +1295,15 @@ mod tests {
         // 目印は書き起こしたときのエンジンの記録として残す
         fs::write(job.file("asr_settings.txt"), "whisper-cli 0000 / 前の設定").unwrap();
         assert!(transcript_reusable(&paths, &job));
-        prepare_asr(&paths, &job, &single).unwrap();
+        prepare_asr(&paths, &job, &single, Lang::Ja, false).unwrap();
         assert!(job.file("asr.json").exists());
         assert_eq!(fs::read_to_string(job.file("asr_settings.txt")).unwrap(), "whisper-cli 0000 / 前の設定");
         // 書き終えていなければ、書きかけは消して今のエンジンで書き直す
         fs::remove_file(job.file("asr.json")).unwrap();
         fs::write(job.file("asr_00.json"), b"{}").unwrap();
-        prepare_asr(&paths, &job, &single).unwrap();
+        prepare_asr(&paths, &job, &single, Lang::Ja, false).unwrap();
         assert!(!job.file("asr_00.json").exists());
-        assert_eq!(fs::read_to_string(job.file("asr_settings.txt")).unwrap(), asr_settings(&paths));
+        assert_eq!(fs::read_to_string(job.file("asr_settings.txt")).unwrap(), asr_settings(&paths, Lang::Ja));
 
         // 4.5 時間の録音（分ける）は、分け方が同じで、分けた部分が全部そろったときだけ
         let turns = vec![turn(0.0, 3200.0), turn(3254.0, 9000.0), turn(9000.5, 16275.0)];

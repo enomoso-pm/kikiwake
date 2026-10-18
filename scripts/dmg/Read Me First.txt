@@ -4,7 +4,7 @@ Kikiwake processes audio and text only on this Mac. It uses the internet only to
 and to check for a new version at launch (it only asks for the latest version number). No audio or text is sent.
 
 The app is available in Japanese and English. It starts in your Mac's language, and you can switch at the top right of the window.
-Transcription currently supports Japanese recordings only.
+It transcribes Japanese and English recordings (the spoken language is detected automatically, or you can choose it).
 
 
 1. Drag "Kikiwake" onto the "アプリケーション" (Applications) shortcut.

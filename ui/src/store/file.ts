@@ -1,8 +1,8 @@
 // 画面2 ファイル選択（UI 画面仕様書 §5）
-import type { AppError, FileDragOver } from "@contract/types";
+import type { AppError, FileDragOver, SpeechLanguage } from "@contract/types";
 import { api } from "../api";
 import { toAppError } from "../lib/errors";
-import { getState, setState } from "./state";
+import { getState, setState, type SpeechChoice } from "./state";
 
 const UNSUPPORTED_FALLBACK: AppError = {
   code: "unsupported_format",
@@ -18,7 +18,7 @@ export async function inspectPath(path: string): Promise<void> {
     const info = await api.inspectFile(path);
     if (my !== inspectSeq) return;
     if (!info.supported) setState({ file: null, fileError: info.unsupported ?? UNSUPPORTED_FALLBACK, fileBusy: false });
-    else setState({ file: info, fileError: null, fileBusy: false, screensOn: false });
+    else setState({ file: info, fileError: null, fileBusy: false, screensOn: false, speechChoice: "auto" });
   } catch (e) {
     if (my !== inspectSeq) return;
     setState({ file: null, fileError: toAppError(e), fileBusy: false });
@@ -60,10 +60,20 @@ export function setDragOver(over: boolean): void {
 
 export function clearFile(): void {
   inspectSeq++;
-  setState({ file: null, fileError: null, startError: null, fileBusy: false, screensOn: false });
+  setState({ file: null, fileError: null, startError: null, fileBusy: false, screensOn: false, speechChoice: "auto" });
 }
 
 /** 版13: 「マニュアル用に、画面の絵も取り出す」（録画のときだけ出す） */
 export function setScreensOn(on: boolean): void {
   setState({ screensOn: on });
+}
+
+/** 版15: 録音の言語（自動で見分ける・日本語・English） */
+export function setSpeechChoice(choice: SpeechChoice): void {
+  setState({ speechChoice: choice });
+}
+
+/** 版15: startJob に渡す録音の言語（自動なら省く） */
+export function chosenLanguage(choice: SpeechChoice): SpeechLanguage | undefined {
+  return choice === "auto" ? undefined : choice;
 }

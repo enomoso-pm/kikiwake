@@ -11,6 +11,7 @@ import type {
   SaveFormat,
   ScreensInfo,
   SpeakerCard,
+  SpeechLanguage,
   Stage,
   TranscriptView,
   UnresolvedHint,
@@ -50,7 +51,14 @@ export interface JobView {
   cancelRequested: boolean;
   /** 版13: マニュアル用に、画面の絵も取り出している（始めたときに選んだ。処理中の画面に一文を出す） */
   screens?: boolean;
+  /** 版15: 書き起こしている録音の言語（エンジンが決めてから。処理中の画面に一文を出す） */
+  language?: SpeechLanguage;
+  /** 版15: language を自動で見分けて決めた */
+  languageDetected?: boolean;
 }
+
+/** 版15: 新しい録音の画面で選ぶ録音の言語（初めは毎回「自動で見分ける」。2026-10-18 決定） */
+export type SpeechChoice = "auto" | SpeechLanguage;
 
 export interface NameMenuState {
   id: string;
@@ -88,6 +96,8 @@ export interface AppState {
   startError: AppError | null;
   /** 版13: 選んだ録画で「マニュアル用に、画面の絵も取り出す」にチェックを入れている（ファイルを選び直すと外れる） */
   screensOn: boolean;
+  /** 版15: 録音の言語（ファイルを選び直すと「自動で見分ける」に戻る。前に選んだものは覚えない） */
+  speechChoice: SpeechChoice;
 
   // 履歴（版8）
   /** 一覧。読む前は null */
@@ -235,6 +245,7 @@ export const useApp = create<AppState>()(() => ({
   dragOver: false,
   startError: null,
   screensOn: false,
+  speechChoice: "auto",
 
   history: null,
   historyError: null,

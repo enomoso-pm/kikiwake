@@ -10,6 +10,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::lang::Lang;
 use crate::lines::Line;
 use crate::merge::{self, Meta, TalkTime, Turn, UNKNOWN, Utterance};
 use crate::speakers::{self, NameHint};
@@ -71,6 +72,7 @@ pub fn speaker_cards(
     audio: &Path,
     sample_dir: &Path,
     prefix: &str,
+    lang: Lang,
 ) -> io::Result<Vec<SpeakerCard>> {
     let tt = merge::talk_time(turns, None);
     let total = merge::or_one(pycompat::sum(tt.values().copied()));
@@ -80,7 +82,7 @@ pub fn speaker_cards(
         *counts.entry(&u.speaker).or_insert(0) += 1;
         first.entry(&u.speaker).or_insert(u.start);
     }
-    let hints = speakers::name_hints(utts, 600.0);
+    let hints = speakers::name_hints(utts, 600.0, lang);
     let samples = speakers::pick_samples(utts, 3, 3.0, 20.0, 8.0);
     let mut cards = Vec::with_capacity(tt.len());
     for (spk, &sec) in &tt {
@@ -92,7 +94,7 @@ pub fn speaker_cards(
                 index: i + 1,
                 start: u.start,
                 end: u.end,
-                text: speakers::excerpt(&u.text, 70),
+                text: speakers::excerpt(&u.text, speakers::excerpt_len(lang)),
                 audio_path: format!("{prefix}{name}"),
             });
         }

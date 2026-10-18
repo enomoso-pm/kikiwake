@@ -3,7 +3,7 @@
 // 裏で処理している録音（見ていなくても進み具合を追う）・順番待ち・一覧の並び・一覧で選んだ途中の録音など。
 // 処理は同時に1本だけ（エンジンの作り）。処理中に足した録音は順番待ちにし、終わったら次を自動で始める（2026-09-27 決定）
 import { create } from "zustand";
-import type { AppError, HistoryItem, JobDone, JobFailed, JobProgress, SaveFormat } from "@contract/types";
+import type { AppError, HistoryItem, JobDone, JobFailed, JobProgress, SaveFormat, SpeechLanguage } from "@contract/types";
 import { api, mockDev } from "../api";
 import { getT } from "../i18n";
 import { toAppError } from "../lib/errors";
@@ -25,6 +25,8 @@ export interface Meta {
   durationSec: number;
   /** 版13: マニュアル用に、画面の絵も取り出す（新しい録音の画面のチェック） */
   screens?: boolean;
+  /** 版15: 録音の言語（新しい録音の画面で選んだ・一覧の「…」の「〈ほかの言語〉で文字起こしし直す」。省くと自動で見分ける） */
+  language?: SpeechLanguage;
 }
 
 /** 一覧で選んでいるが、画面の状態には読み込んでいない録音（途中の録音・順番待ち） */
@@ -49,6 +51,8 @@ interface ObjectsState {
   notice: { kind: "savedMissing" | "error"; error: AppError } | null;
   /** 削除する前に確かめている録音 */
   deleting: HistoryItem | null;
+  /** 版15: ほかの言語で文字起こしし直す前に確かめている録音（所要時間の目安はファイルを調べて入れる） */
+  relang: { item: HistoryItem; to: SpeechLanguage; estimate: { minSec: number; maxSec: number } | null } | null;
   /** 見ていない間に文字起こしが終わり、まだ開いていない録音（一覧の「●」。アプリを閉じても覚えておく） */
   fresh: string[];
   /** 「AI モデルと動作条件」を見返している（はじめの準備とは出し方が違う） */
@@ -89,6 +93,7 @@ export const useObjects = create<ObjectsState>(() => ({
   collapsed: false,
   notice: null,
   deleting: null,
+  relang: null,
   fresh: loadFresh(),
   reviewing: false,
   dragging: false,
@@ -208,14 +213,18 @@ async function startNext(): Promise<void> {
   if (viewing) {
     set({ peek: null });
     setState({ playable: true, relinkError: null, file: null });
-    void startJob(next.path, next.screens);
+    void startJob(next.path, next.screens, next.language);
     return;
   }
   const job = newJobView(next.path, next.screens);
   early.length = 0;
   set({ running: job });
   try {
-    const started = await api.startJob({ path: next.path, ...(next.screens ? { screens: true } : {}) });
+    const started = await api.startJob({
+      path: next.path,
+      ...(next.screens ? { screens: true } : {}),
+      ...(next.language ? { language: next.language } : {}),
+    });
     const r = get().running;
     if (r !== job && !(r && r.jobId === null && samePath(r.path, next.path))) return;
     set({ running: { ...(r ?? job), jobId: started.jobId, outDir: started.outDir } });
@@ -242,7 +251,7 @@ export function startOrEnqueue(path: string, meta: Meta): void {
   }
   set({ peek: null, runningMeta: meta, notice: null });
   setState({ playable: true, relinkError: null });
-  void startJob(path, meta.screens);
+  void startJob(path, meta.screens, meta.language);
 }
 
 export function enqueue(path: string, meta: Meta, select = true): void {
@@ -345,6 +354,35 @@ export function retryViewed(): void {
 /** 一覧の行の「…」の「削除…」: 確かめてから削除する（作業フォルダを丸ごと。元の録音と保存したファイルは削除しない） */
 export function deleteEntry(item: HistoryItem): void {
   set({ deleting: item });
+}
+
+/**
+ * 版15: 書き終えた録音を、もう一方の言語で文字起こしし直す（一覧の行の「…」。2026-10-18 決定: 自動で見分ける＋選び直せる）。
+ * 確かめの窓に所要時間の目安を出すため、ファイルを調べる（声の聞き分けは使い回す）
+ */
+export function askRelang(item: HistoryItem, to: SpeechLanguage): void {
+  set({ relang: { item, to, estimate: null } });
+  void api
+    .inspectFile(item.path)
+    .then((info) => {
+      const estimate = info.supported ? (info.previous?.estimateRedo ?? info.estimate) : null;
+      const r = get().relang;
+      if (estimate && r && r.item.jobId === item.jobId) set({ relang: { ...r, estimate } });
+    })
+    .catch(() => {
+      // 目安が出せなくても、確かめはできる
+    });
+}
+
+export function cancelRelang(): void {
+  set({ relang: null });
+}
+
+export function confirmRelang(): void {
+  const r = get().relang;
+  set({ relang: null });
+  if (!r) return;
+  startOrEnqueue(r.item.path, { name: r.item.name, durationSec: r.item.durationSec, language: r.to });
 }
 
 export function cancelDelete(): void {

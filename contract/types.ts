@@ -1,6 +1,6 @@
 // Kikiwake 画面 ⇄ エンジンの受け渡しの約束（データの形）。ここが正。
 // 変更したら contract/README.md の履歴に書く。
-// 版 14（2026-10-16）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
+// 版 15（2026-10-18）。数値の見本は contract/fixtures/。変更の履歴は contract/README.md。
 // 書き起こしは正確さ優先（Whisper large-v3）だけ。版1にあった品質の選択（速さ優先）は無くした。
 
 /**
@@ -8,6 +8,13 @@
  * エンジンが返す文（AppError.message・EnvironmentItem.message・ラベルの「話者A」など）は日本語のままで、訳すのは画面側
  */
 export type Locale = "ja" | "en";
+
+/**
+ * 版15で追加（2026-10-18）。録音の言語（書き起こしの言語）。画面の言語（Locale）とは別に、録音ごとに決める。
+ * startJob で選ぶ（省くと自動で見分ける: 話者の判定のあと、話している所から 30 秒ほどを聞いて決める）。
+ * 1.1.x までに文字起こしした録音は日本語
+ */
+export type SpeechLanguage = "ja" | "en";
 
 /** 処理の段階（この順に進む） */
 export type Stage = "extract" | "diarize" | "transcribe" | "merge";
@@ -83,6 +90,17 @@ export interface FileInfo {
      * false なら話者判定だけを使い回し、書き起こしから始める
      */
     resultReusable: boolean;
+    /**
+     * 版15で追加。前回の書き起こし（書き終えた・書きかけ）の言語。書き起こしが無ければ省く。
+     * 違う言語を選んで始めると、書き起こしからやり直す（話者の判定は使い回す。resultReusable でも使い回さない）。
+     * 自動で見分けるときは、前回の言語のまま使い回す
+     */
+    language?: SpeechLanguage;
+    /**
+     * 版15で追加。resultReusable のとき、違う言語を選んで書き起こしからやり直す場合の所要時間の目安（全段階の合計、秒）。
+     * estimate は使い回すときの数秒なので、言語を変えたときはこちらを出す
+     */
+    estimateRedo?: { minSec: number; maxSec: number };
   };
   /**
    * 版9で追加。同じ場所の録音を前に文字起こししていて、そのあとファイルが変わった（大きさか更新日時が違うので、新しい録音として扱う）。
@@ -122,6 +140,10 @@ export interface JobProgress {
   elapsedSec: number;
   /** 前回の話者判定の結果を使い回しているとき true */
   reusedDiarization: boolean;
+  /** 版15で追加。書き起こしている録音の言語（決まってから。自動で見分けるときは話者の判定のあと。書き起こしの段階の頭で決まる） */
+  language?: SpeechLanguage;
+  /** 版15で追加。language を自動で見分けて決めた（選んだ・前回の言語を使い回した、は省く） */
+  languageDetected?: boolean;
 }
 
 export interface JobDone {
@@ -129,6 +151,10 @@ export interface JobDone {
   outDir: string;
   speakers: number; // 話者ラベルの数
   unresolvedCount: number; // 確認用に回った件数
+  /** 版15で追加。書き起こしの言語（1.1.x までに文字起こしした録音は "ja"） */
+  language: SpeechLanguage;
+  /** 版15で追加。language を自動で見分けて決めた（画面は「英語（自動で判定）」のように出す）。選んだ・前の版の録音は省く */
+  languageDetected?: boolean;
   /** 版6で追加。この録音で前に確定した名前（applyNames で渡したもの）。名前付けの画面に最初から入れておく。無ければ省略 */
   names?: Names;
   /** 版8で追加。閉じたときの状態（saveDraft で渡したもの）。書き起こしが変わっていれば（行の id が合わないので）省略 */
@@ -180,7 +206,7 @@ export interface SpeakerSample {
   index: number; // 1〜3（序盤・中盤・終盤から1つずつ）
   start: number; // 秒
   end: number;
-  text: string; // 発言の冒頭70字（超えたら末尾に「…」）
+  text: string; // 発言の冒頭70字（超えたら末尾に「…」）。版15: 英語の録音は110字
   audioPath: string; // 12秒以内の WAV。再生には api.audioSrc(audioPath) を使う
 }
 
@@ -221,7 +247,7 @@ export interface UnresolvedClip {
    */
   start: number;
   end: number;
-  /** 聞かせる範囲の文字（70字まで、超えたら末尾に「…」）。部分の途中から始まるときは先頭に「…」 */
+  /** 聞かせる範囲の文字（70字まで、超えたら末尾に「…」。版15: 英語の録音は110字まで）。部分の途中から始まるときは先頭に「…」 */
   text: string;
   audioPath: string; // 12秒以内の WAV。再生には api.audioSrc(audioPath) を使う
 }
@@ -391,6 +417,11 @@ export interface HistoryItem {
    * 一度も保存していなければ省略。一覧の行の「…」の「Finder で表示」に使う（2026-09-29 決定: 保存の帯から「Finder で表示」を外し、一覧の行へ）
    */
   savedFiles?: string[];
+  /**
+   * 版15で追加。書き起こしの言語（書き終えた・書きかけの書き起こしがあれば。1.1.x までの録音は "ja"）。
+   * 一覧の行の「…」の「〈ほかの言語〉で文字起こしし直す」に使う
+   */
+  language?: SpeechLanguage;
 }
 
 /** 版8で追加。履歴から開いた録音（openHistory・relinkSource）。JobDone と同じ中身に、元ファイルがあるかを足したもの */

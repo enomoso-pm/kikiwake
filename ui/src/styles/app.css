@@ -547,6 +547,43 @@ textarea::placeholder {
   background: var(--accent);
 }
 
+/* 版15: 録音の言語（新しい録音の画面。選ぶ部品は保存の窓の保存先と同じ形） */
+.speech-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 6px;
+  padding: 12px 18px;
+}
+
+.speech-select {
+  width: auto;
+  min-width: 200px;
+  height: 34px;
+  padding: 0 30px 0 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: #fff
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235d6168' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 12px center;
+  border: 1px solid var(--line-input);
+  border-radius: 6px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.speech-select:hover {
+  border-color: var(--ink-4);
+}
+
+.speech-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .save-folder {
   width: 100%;
   height: 36px;

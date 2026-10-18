@@ -36,6 +36,7 @@ fn meta() -> Meta {
         asr: Some("Whisper large-v3（whisper.cpp）".into()),
         created: Some("2026-09-27".into()),
         audio: None,
+        language: None,
     }
 }
 

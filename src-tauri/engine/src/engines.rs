@@ -5,6 +5,8 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+use kikiwake_core::lang::Lang;
+
 use crate::error::AppError;
 use crate::paths::Paths;
 use crate::proc::{self, Cancel, Finished};
@@ -12,8 +14,11 @@ use crate::proc::{self, Cancel, Finished};
 pub const ASR_MODEL_FILE: &str = "ggml-large-v3.bin";
 pub const DIAR_MODEL_FILE: &str = "Nemotron-3-Diarization.q8_0.gguf";
 
-/// 書き起こしの設定（Phase 0 で採用）。-mc 0（文脈を引き継がない）が無いと、実録音 68 分が 16.7 分から同じ文の繰り返しで壊れた
-pub const ASR_ARGS: [&str; 10] = ["-l", "ja", "-bs", "1", "--dtw", "large.v3", "-nfa", "-mc", "0", "-pp"];
+/// 書き起こしの設定（Phase 0 で採用）。-mc 0（文脈を引き継がない）が無いと、実録音 68 分が 16.7 分から同じ文の繰り返しで壊れた。
+/// 録音の言語（-l）は録音ごとに決める（2026-10-18。英語の文字起こし。日本語は前と同じ「-l ja」）
+pub fn asr_args(lang: Lang) -> [&'static str; 10] {
+    ["-l", lang.as_str(), "-bs", "1", "--dtw", "large.v3", "-nfa", "-mc", "0", "-pp"]
+}
 /// 話者判定の設定（Phase 0 で採用。後処理は C++ の既定）
 const DIAR_PRESET: &str = "v3-offline";
 
@@ -152,13 +157,14 @@ pub fn transcribe(
     paths: &Paths,
     wav: &Path,
     out_stem: &Path,
+    lang: Lang,
     cancel: &Cancel,
     mut on_progress: impl FnMut(f64) + Send,
 ) -> Result<PathBuf, AppError> {
     let model = model(paths, ASR_MODEL_FILE)?;
     let mut args: Vec<&std::ffi::OsStr> =
         vec!["-m".as_ref(), model.as_os_str(), "-f".as_ref(), wav.as_os_str(), "-ojf".as_ref(), "-of".as_ref(), out_stem.as_os_str()];
-    args.extend(ASR_ARGS.iter().map(|a| std::ffi::OsStr::new(a)));
+    args.extend(asr_args(lang).into_iter().map(std::ffi::OsStr::new));
     let f = check("whisper-cli", proc::run(&paths.engine("whisper-cli")?, &args, cancel, |_| {}, |l| {
         if let Some(p) = parse_progress_line(l) {
             on_progress(p);
@@ -169,6 +175,36 @@ pub fn transcribe(
         return Err(AppError::engine_failed().with_detail(f.detail("whisper-cli")));
     }
     Ok(json)
+}
+
+/// 「whisper_full_with_state: auto-detected language: en (p = 0.989719)」→ ("en", 0.989719)
+pub fn parse_detected_line(line: &str) -> Option<(String, f64)> {
+    let (_, rest) = line.split_once("auto-detected language: ")?;
+    let (code, p) = rest.split_once(" (p = ")?;
+    let code = code.trim();
+    if code.is_empty() || !code.chars().all(|c| c.is_ascii_lowercase()) {
+        return None;
+    }
+    Some((code.to_string(), p.trim().strip_suffix(')')?.trim().parse().ok()?))
+}
+
+/// 録音の言語を見分ける（whisper-cli の -dl。渡した音声の頭の 30 秒だけを聞いて、言語の記号と確からしさを返す）。
+/// 録音の頭は無言・待ち時間のことがある（68 分の実録音の頭 30 秒はノルウェー語と判定した）ので、
+/// 渡すのは話している所から切り出した音声（job.rs の language_probe）。見分けられなければ None
+pub fn detect_language(paths: &Paths, wav: &Path, cancel: &Cancel) -> Result<Option<(String, f64)>, AppError> {
+    let model = model(paths, ASR_MODEL_FILE)?;
+    let args: Vec<&std::ffi::OsStr> =
+        vec!["-m".as_ref(), model.as_os_str(), "-f".as_ref(), wav.as_os_str(), "-dl".as_ref(), "-l".as_ref(), "auto".as_ref()];
+    let mut found = None;
+    let f = check("whisper-cli", proc::run(&paths.engine("whisper-cli")?, &args, cancel, |_| {}, |l| {
+        if found.is_none() {
+            found = parse_detected_line(l);
+        }
+    }))?;
+    if !f.status.success() {
+        return Err(AppError::engine_failed().with_detail(f.detail("whisper-cli -dl")));
+    }
+    Ok(found)
 }
 
 #[cfg(test)]
@@ -182,5 +218,23 @@ mod tests {
         assert_eq!(parse_progress_line("whisper_print_progress_callback: progress =  45%"), Some(45.0));
         assert_eq!(parse_progress_line("whisper_print_progress_callback: progress = 100%"), Some(100.0));
         assert_eq!(parse_progress_line("progress 12"), None);
+    }
+
+    #[test]
+    fn detected_language_line() {
+        assert_eq!(
+            parse_detected_line("whisper_full_with_state: auto-detected language: en (p = 0.989719)"),
+            Some(("en".to_string(), 0.989719))
+        );
+        assert_eq!(parse_detected_line("whisper_full_with_state: auto-detected language: ja (p = 0.998742)").map(|x| x.0), Some("ja".into()));
+        assert_eq!(parse_detected_line("whisper_init: loading model"), None);
+        assert_eq!(parse_detected_line("auto-detected language:  (p = 0.5)"), None);
+    }
+
+    #[test]
+    fn asr_args_keep_japanese_as_before() {
+        // 日本語は前と同じ引数（書き起こしの設定の目印 asr_settings.txt も前と同じになる）
+        assert_eq!(asr_args(Lang::Ja).join(" "), "-l ja -bs 1 --dtw large.v3 -nfa -mc 0 -pp");
+        assert_eq!(asr_args(Lang::En)[..2], ["-l", "en"]);
     }
 }

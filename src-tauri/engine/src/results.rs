@@ -52,7 +52,7 @@ pub fn get_unresolved_hints(engine: &Engine, job_id: &str) -> Result<Vec<Unresol
 }
 
 fn named_view(p: &Parts, names: &Names) -> TranscriptView {
-    let named: Vec<lines::Line> = lines::lines(&p.words, &p.turns, Some(names)).into_iter().map(|r| r.line).collect();
+    let named: Vec<lines::Line> = lines::lines(&p.words, &p.turns, Some(names), p.meta.speech_lang()).into_iter().map(|r| r.line).collect();
     let tt = merge::talk_time(&p.turns, Some(names));
     view::transcript_view(&named, &tt, &p.meta, p.meta.duration.unwrap_or(0.0), true)
 }

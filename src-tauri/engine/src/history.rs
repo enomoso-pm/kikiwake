@@ -203,6 +203,7 @@ pub fn list_history(engine: &Engine) -> Vec<HistoryItem> {
             saved: done && saved_once(&job),
             named_speakers: named_speakers(&job),
             saved_files: if done { last_saved_files(&job) } else { None },
+            language: crate::job::transcript_language(&job).map(|s| s.language),
         };
         items.push((last_touched(&job), item));
     }
@@ -240,12 +241,16 @@ pub fn open_history(engine: &Engine, job_id: &str) -> Result<HistoryOpened, AppE
     let available = source_state(&job) == SourceState::Ok && ensure_audio(engine, &job);
     let view: serde_json::Value = kikiwake_core::merge::load_json(&job.file("view_transcript.json")).map_err(|e| io_error(&e, "view_transcript.json"))?;
     let unresolved_count = view.get("unresolved").and_then(|u| u.as_array()).map(Vec::len).unwrap_or(0);
+    // 版15: 書き起こしの言語（記録の無い前の版の書き起こしは日本語）
+    let speech = crate::job::transcript_language(&job);
     Ok(HistoryOpened {
         done: JobDone {
             job_id: job_id.to_string(),
             out_dir: out_dir_for(Path::new(&src.path)).display().to_string(),
             speakers: count_speakers(&job).unwrap_or(0),
             unresolved_count,
+            language: speech.map(|s| s.language).unwrap_or_default(),
+            language_detected: speech.is_some_and(|s| s.detected),
             names: names_of(&job),
             draft: load_draft(&job),
             screens: crate::screens::info(&job),

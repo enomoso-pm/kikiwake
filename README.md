@@ -1,7 +1,7 @@
 # Kikiwake（聞き分け）
 
 > **English:** Kikiwake is a macOS app that turns meeting recordings into speaker-labeled transcripts, entirely on your Mac.
-> The app is available in **Japanese and English**. Transcription currently supports **Japanese recordings only**.
+> The app is available in **Japanese and English**. It transcribes **Japanese and English recordings** (the spoken language is detected automatically).
 
 会議の録音・録画から、「誰が・何を話したか」が分かる文字起こしを作る Mac のアプリです。
 **音声も文字も、この Mac の中だけで処理します。**
@@ -17,7 +17,8 @@
 - 4 時間ほどの長い録音でも、メモリを使いすぎずに最後まで文字起こしする
 - 画面共有の録画から、マニュアルの素材（場面ごとの画面の絵と、その間の発言をまとめた zip）を書き出す。AI に渡して手順書を書かせるための説明（README.md）入り。
   会議アプリの参加者の枠は見分けられたときに外し、カメラに映った人は黒く塗る
-- 画面は日本語と英語（Mac の言語に合わせて始まり、窓の右上で切り替えられる。保存するファイルの見出しなども画面の言語で）。文字起こしできるのは、今は日本語の録音だけ
+- 日本語と英語の録音を文字起こしする。どちらの言語かは、話している所を聞いて自動で見分ける（新しい録音の画面で選ぶこともできる）
+- 画面は日本語と英語（Mac の言語に合わせて始まり、窓の右上で切り替えられる。保存するファイルの見出しなども画面の言語で）
 
 | 新しい録音 | 文字起こし |
 |---|---|
@@ -53,7 +54,8 @@
 窓の左に録音の一覧、右に選んだ録音が出ます。
 
 1. **準備**（初回だけ）: 動作条件を確かめて、AI モデル（約 3.2GB）をダウンロードし、「はじめる」を押します。あとから一覧の下の「AI モデルと動作条件」で見返せます
-2. **新しい録音**: 録音・録画を窓にドラッグします（または「ファイルを選ぶ」）。どの画面でも、窓に落とせば新しい録音になります。「文字起こしをはじめる」を押します
+2. **新しい録音**: 録音・録画を窓にドラッグします（または「ファイルを選ぶ」）。どの画面でも、窓に落とせば新しい録音になります。「文字起こしをはじめる」を押します。
+   「録音の言語」は初めは「自動で見分ける」で、声の聞き分けのあとに、話している所を聞いて日本語か英語かを決めます（文字起こし中の画面に「英語の録音として文字起こししています」のように出ます）。言語が分かっているときは「日本語」「English」を選べます
 3. **文字起こし中**: 待ちます。M4 の Mac で録音の長さの 0.2〜0.4 倍ほど（68 分の録音で約 15 分）。文字起こし中は Mac がスリープしません。待つ間も、一覧からほかの録音を開けます。文字起こし中に選んだ録音は順番待ちになり、前のものが終わると自動ではじまります
 4. **話者**: 話者ごとに「▶ 再生」で声を聞き、名前を入れます。名前を付けなくても保存できます（「話者A」などのまま）
 5. **文字起こし**: 確かめて、必要なら直して、右下の「保存…」で保存します（「話者」のタブからも保存できます）。出てくる窓で形式（.md・.txt・.json）と保存先を選びます。保存先は初めは元のファイルと同じフォルダで、ファイルの名前は「〈元の名前〉_文字起こし.md」のように録音の名前入りです（英語の画面では「〈元の名前〉_transcript.md」）。一度選んだ形式と保存先は、次からもそのまま使います
@@ -61,6 +63,7 @@
 **録音の一覧**: 文字起こし中・順番待ち・前に文字起こしした録音が並び、状態の印（文字起こし中・順番待ち・中断・保存前・保存済み・保存後に手直し）で、どこまで済んだかが分かります。名前を付けた録音は、「松本・田中ほか2人」のように話者の名前も出ます。
 開くと、閉じたときのタブ（話者・文字起こし）に、入れかけの名前や直した文字のまま戻ります（保存していなくても残ります）。見ていない間に文字起こしが終わった録音には「●」が付きます。
 一覧の行の右上の「…」から、保存したファイルを Finder で表示したり、要らなくなった録音を削除したりできます（削除しても、元のファイルと保存したファイルは消えません）。途中で中断した録音は「再開する」で続きから文字起こしできます。
+言語の見分けが外れていたときは、「…」の「英語で文字起こしし直す…」（英語の録音なら「日本語で…」）で、声の聞き分けは使い回して文字にするところからやり直せます（付けた名前は残り、文字起こしの画面での手直しは消えます）。画面の言語と違う言語の録音は、録音の上の段に「英語」のように出ます。
 元のファイルを移したり、書き換えたりしたときは、録音の上に帯が出て、選び直す・結び直すことができます。
 
 **マニュアルの素材**: 画面共有の録画（.mp4・.mov）を選んだときは、「文字起こしをはじめる」の前に「マニュアル用に、画面の絵も取り出す」にチェックを入れると、文字起こしと同時に画面を読み取ります（2 時間半の録画で約 2 分）。
@@ -130,7 +133,7 @@ AI モデルはアプリに含めず、初回にそれぞれの配布元から�
 Kikiwake (聞き分け, "telling voices apart") is a macOS app that creates speaker-labeled transcripts from meeting recordings.
 Everything runs locally on your Mac: no audio or text is sent anywhere, and there is no telemetry. The only network access is the one-time download of the AI models from Hugging Face, and a check for a new version on GitHub at launch (it only asks for the latest version number; GitHub sees your IP address and your Kikiwake version; you can turn this off in “AI models & requirements”). New versions are never installed automatically.
 
-- **Language:** The app is available in **Japanese and English**. It starts in your Mac's language, and you can switch at the top right of the window. Saved transcripts follow the app's language. Transcription currently supports **Japanese recordings only**.
+- **Language:** The app is available in **Japanese and English**. It starts in your Mac's language, and you can switch at the top right of the window. Saved transcripts follow the app's language. It transcribes **Japanese and English recordings**: by default the spoken language is detected automatically from the speech (after the voice separation), or you can choose “日本語” or “English” under “Spoken language” on the New recording screen. If the detection is wrong, choose “Transcribe again in …” from the … menu of the recording in the list (the voice separation is reused, and names you gave are kept).
 - **Requirements:** Apple silicon Mac, macOS 14 or later, 16 GB of memory recommended, about 4 GB of free disk space.
 - **Recordings list:** The list on the left shows recordings being transcribed, queued, and done, each with a status (Transcribing, Queued, Stopped, Not saved yet, Saved, Edited since saving). You can open another recording while one is being transcribed. Reopening returns you to where you left off, including names you were typing and text you edited (even if you didn't save a file). Stopped recordings can be resumed. Removing a recording from the list deletes only Kikiwake's working data, not your recording or saved transcripts.
 - **Materials for a manual:** For a screen-sharing recording (.mp4 or .mov), check “Also take screen images for a manual” before starting. When saving, check the `.zip` under “Materials for a manual” to save a zip with an image of each scene, the remarks made during it, the transcript, and a README that tells an AI (such as Claude) how to write a step-by-step manual from them. The images are cut down to the shared screen (the meeting app's participant panel is removed when it can be told apart) and people on camera are blacked out; other things that were on screen may remain, so check the images before you share the zip. Whether an AI service accepts a zip depends on the service and its settings.

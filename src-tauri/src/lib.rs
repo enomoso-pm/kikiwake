@@ -120,9 +120,10 @@ async fn inspect_file(state: State<'_, AppState>, path: String) -> R<FileInfo> {
 // ---- 画面3 処理中 ----
 
 #[tauri::command]
-async fn start_job(state: State<'_, AppState>, path: String, screens: Option<bool>) -> R<JobStarted> {
-    // 版13: screens なら、マニュアル用に画面の絵も取り出す
-    state.engine.start_job_with(Path::new(&path), screens.unwrap_or(false))
+async fn start_job(state: State<'_, AppState>, path: String, screens: Option<bool>, language: Option<String>) -> R<JobStarted> {
+    // 版13: screens なら、マニュアル用に画面の絵も取り出す。版15: language は録音の言語（"ja"・"en"。無い・"auto" は自動で見分ける）
+    let language = language.as_deref().and_then(kikiwake_core::lang::Lang::parse);
+    state.engine.start_job_with(Path::new(&path), screens.unwrap_or(false), language)
 }
 
 #[tauri::command]

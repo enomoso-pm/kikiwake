@@ -1,5 +1,6 @@
 //! 受け渡しの約束（contract/types.ts）のうち、処理の流れが作る型。
 //! 画面向けの話者カード・結果の表示・確認用の手がかり・行・手直し・保存の結果は core の型をそのまま使う。
+use kikiwake_core::lang::Lang;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
@@ -123,6 +124,12 @@ pub struct Previous {
     pub processed_at: String,
     /// 版6: 前回の書き起こしまでそろっていて、始めると書き起こしをやり直さずに1秒ほどで名前付けへ進む
     pub result_reusable: bool,
+    /// 版15: 前回の書き起こし（書き終えた・書きかけ）の言語。違う言語を選んで始めると書き起こしからやり直す。書き起こしが無ければ省く
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<Lang>,
+    /// 版15: result_reusable のとき、違う言語を選んで書き起こしからやり直す場合の所要時間の目安（estimate は使い回すときの数秒）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate_redo: Option<Estimate>,
 }
 
 // ---- 画面3 処理中 --------------------------------------------------------------------
@@ -144,6 +151,12 @@ pub struct JobProgress {
     pub eta_sec: Option<u64>,
     pub elapsed_sec: u64,
     pub reused_diarization: bool,
+    /// 版15: 書き起こしている録音の言語（決まってから。自動で見分けるときは話者の判定のあと）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<Lang>,
+    /// 版15: language を自動で見分けて決めた
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub language_detected: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -153,6 +166,12 @@ pub struct JobDone {
     pub out_dir: String,
     pub speakers: usize,
     pub unresolved_count: usize,
+    /// 版15: 書き起こしの言語（前の版の書き起こしは日本語）
+    #[serde(default)]
+    pub language: Lang,
+    /// 版15: language を自動で見分けて決めた（画面で選んだ・前の版は false で省く）
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub language_detected: bool,
     /// 版6: この録音で前に確定した名前（names.json）。名前付けの画面に最初から入れておく
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub names: Option<kikiwake_core::merge::Names>,
@@ -229,6 +248,10 @@ pub struct HistoryItem {
     /// 一覧の行の「…」の「Finder で表示」に使う
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved_files: Option<Vec<String>>,
+    /// 版15: 書き起こしの言語（書き終えた・書きかけの書き起こしがあれば。前の版の書き起こしは日本語）。
+    /// 一覧の行の「…」の「〈ほかの言語〉で文字起こしし直す」に使う
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<Lang>,
 }
 
 /// contract の HistoryOpened（openHistory・relinkSource の答え）: JobDone と同じ中身と、元ファイルがあるか

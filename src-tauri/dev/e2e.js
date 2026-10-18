@@ -16,6 +16,8 @@
 //          終わりに判定の版を 1 つ下げる（判定の版が上がったときのまね）
 //   screens2 約束 版14: screens のあと同じ作業フォルダで開き直し、前の版で読み取った録画を一覧から開くと、.zip の行が押せず理由と作り直し方が出る →
 //          案内のとおりに「新しい録音」で選び直してチェックを入れると、画面だけ読み取り直して .zip の行が戻る
+//   speech 約束 版15: 英語の録音（英語の合成会議）を「自動で見分ける」で通す → 処理中の一文・言語・上の段の「英語」・英語の名前の手がかり →
+//          選び直して日本語を選ぶと「言語を変えて文字起こしし直します」→ 一覧の「…」の「日本語で文字起こしし直す…」で確かめてやり直す（名前は残る）
 // 保存（2026-09-29 決定・約束 版12）: 保存の帯は「保存…」だけで、押すと窓で形式と保存先を選ぶ（覚えて次からも同じ）。ファイルは録音の名前入り
 // 「<元の名前>_文字起こし.<形式>」を、選んだフォルダ（既定は元のファイルと同じフォルダ）にそのまま書く。Finder で表示と削除は一覧の行の「…」から
 (() => {
@@ -723,7 +725,8 @@
     );
     check("処理中の行には「…」が無い", !runningEntry() || !moreButton(runningEntry()));
     const items1 = await openRowMenu(entryOf(name1));
-    check("「…」の中は「Finder で表示」と「削除…」（保存したので押せる）", menuItemsText(items1) === "Finder で表示|削除…", menuItemsText(items1));
+    // 約束 版15: 書き終えた録音には「〈ほかの言語〉で文字起こしし直す…」（日本語の録音なので「英語で…」）
+    check("「…」の中は「Finder で表示」（保存したので押せる）・「英語で文字起こしし直す…」・「削除…」", menuItemsText(items1) === "Finder で表示|英語で文字起こしし直す…|削除…", menuItemsText(items1));
     await snap(sc, "row-menu");
     escape();
     check("Esc で「…」のメニューを閉じる", await waitFor(() => !document.querySelector(".objects-row-menu"), 2000));
@@ -757,11 +760,11 @@
     // 開いていない1本目は、エンジンの一覧の「最後に保存したファイル」で押せる（約束 版12）
     const items2 = await openRowMenu(entryOf(name2));
     const note = norm(document.querySelector(".objects-row-menu .objects-menu-note")?.textContent);
-    check("保存していない録音の「…」は「Finder で表示」を押せない・「まだ保存していません」", menuItemsText(items2) === "Finder で表示（押せない）|削除…" && note === "まだ保存していません", `${menuItemsText(items2)}・${note}`);
+    check("保存していない録音の「…」は「Finder で表示」を押せない・「まだ保存していません」", menuItemsText(items2) === "Finder で表示（押せない）|英語で文字起こしし直す…|削除…" && note === "まだ保存していません", `${menuItemsText(items2)}・${note}`);
     escape();
     await waitFor(() => !document.querySelector(".objects-row-menu"), 2000);
     const items3 = await openRowMenu(entryOf(name1));
-    check("開いていない保存済みの録音の「…」は「Finder で表示」を押せる", menuItemsText(items3) === "Finder で表示|削除…", menuItemsText(items3));
+    check("開いていない保存済みの録音の「…」は「Finder で表示」を押せる", menuItemsText(items3) === "Finder で表示|英語で文字起こしし直す…|削除…", menuItemsText(items3));
     escape();
     await waitFor(() => !document.querySelector(".objects-row-menu"), 2000);
     hideOverlay();
@@ -955,6 +958,108 @@
     await sleep(200);
   }
 
+  // ---- 英語の録音（約束 版15。2026-10-18 決定: 自動で見分ける＋選び直せる。日本語と英語） ------------------------
+
+  const speechSelect = () => document.querySelector(".speech-select");
+  /** 録音の言語を選ぶ（React が読む値を変える） */
+  async function chooseSpeech(value) {
+    const sel = speechSelect();
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(sel, value);
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(100);
+  }
+  /** 新しい録音の画面の青い帯（前回の文字起こしを使う・言語を変えてやり直す など）の題 */
+  const fileBandTitle = () => norm(document.querySelector(".page-scroll .band-info span")?.textContent);
+  /** 録音の上の段の情報の行（処理日・長さ・話者の数・録音の言語） */
+  const headMeta = () => norm(document.querySelector(".objects-meta .num")?.textContent);
+
+  async function speechScenario(sc) {
+    const L = JA;
+    const name = sc.recording.split("/").pop();
+    await screen(L.newTitle, 30000);
+    const start = await chooseFile(sc.recording, L);
+    const sel = speechSelect();
+    check(
+      "新しい録音の画面に「録音の言語」（初めは「自動で見分ける」・日本語・English）",
+      sel && sel.value === "auto" && [...sel.options].map((o) => o.text).join("|") === "自動で見分ける|日本語|English",
+      sel ? `${sel.value}・${[...sel.options].map((o) => o.text).join("|")}` : "無い",
+    );
+    check("「自動」の説明の一言", bodyText().includes("話している所を聞いて、日本語か英語かを決めます。"));
+    await snap(sc, "speech-file");
+    lastDone = null;
+    start.click();
+    check(
+      "処理中に「英語の録音として文字起こししています（自動で見分けました）」",
+      await waitFor(() => bodyText().includes("英語の録音として文字起こししています（自動で見分けました）。"), 120000, 200),
+    );
+    await snap(sc, "speech-processing");
+    const w = await waitNaming(sc, L);
+    check("終わると、言語は英語・自動で見分けた", lastDone?.language === "en" && lastDone?.languageDetected === true, `${fmt(w.sec)} 秒・${lastDone?.language}・${lastDone?.languageDetected}`);
+    // 一覧を読み直すと、録音の上の段に言語が出る（書き終えた録音の HistoryItem.language）
+    check("録音の上の段に「英語」（日本語の画面で英語の録音のときだけ）", await waitFor(() => headMeta().endsWith(" ・ 英語"), 5000), headMeta());
+    const cards = await invoke("get_speakers", { jobId: lastDone.jobId });
+    const hints = cards.map((c) => `${c.label}:${c.hints.map((h) => h.name).join("/")}`).join(" ");
+    const hintNames = new Set(cards.flatMap((c) => c.hints.map((h) => h.name)));
+    check("英語の名前の手がかり（Matsumoto・Tom・David・Emily）", ["Matsumoto", "Tom", "David", "Emily"].every((n) => hintNames.has(n)), hints);
+    check("サンプルの文は英語（単語の間に空白）", cards.some((c) => c.samples.some((s) => / [a-z]+ [a-z]+/.test(s.text))), cards[0]?.samples[0]?.text.slice(0, 60));
+    // 名前を 1 つ付けて確定する（文字起こしし直しても残るか、あとで見る）
+    const first = cards[0].label;
+    const input = await waitFor(() => document.getElementById(`name-${first}`), 3000);
+    if (input) setValue(input, "Matsumoto");
+    await snap(sc, "speech-naming");
+    await toTab(L.transcript);
+    const view = await invoke("get_transcript", { jobId: lastDone.jobId, named: true });
+    check("文字起こしは英語の文（語の間に空白）", view.utterances.some((u) => u.text.includes("Thank you all for joining today.")), view.utterances[0]?.text.slice(0, 80));
+    await snap(sc, "speech-result");
+    // 保存: 見出しは画面の言語（日本語）、本文は英語（2026-10-18 決定）
+    check("保存（.md）", (await saveAndWait(L, ["md"])) === "saved", lastSaveToast);
+    const md = await invoke("dev_read", { path: `${folderOf(sc.recording)}/${savedStem(sc.recording)}.md` });
+    check(
+      "保存した .md の見出しは日本語（画面の言語）・本文は英語",
+      md.startsWith("# 話者付き文字起こし: ") && md.includes("Thank you all for joining today."),
+      md.split("\n").slice(0, 2).join(" ／ ").slice(0, 80),
+    );
+
+    // 同じファイルを選び直す: 自動なら前回の書き起こしを使い回す。日本語を選ぶと「言語を変えて文字起こしし直します」
+    await newRecording(L);
+    await chooseFile(sc.recording, L);
+    check("選び直すと、自動のままなら「前回の文字起こしを使います」", fileBandTitle() === "前回の文字起こしを使います", fileBandTitle());
+    await chooseSpeech("ja");
+    check(
+      "日本語を選ぶと「言語を変えて文字起こしし直します」（前回は英語・声の聞き分けは使い回す）",
+      fileBandTitle() === "言語を変えて文字起こしし直します" && bodyText().includes("前回は英語で文字起こししています。"),
+      fileBandTitle(),
+    );
+    check("所要時間の目安は「すぐに終わります」でなくなる", !bodyText().includes("すぐに終わります"), norm(document.querySelectorAll(".page-scroll .card strong")[0]?.textContent));
+    await snap(sc, "speech-file-relang");
+    await chooseSpeech("en");
+    check("英語（前回と同じ）を選ぶと、前回の文字起こしを使う", fileBandTitle() === "前回の文字起こしを使います", fileBandTitle());
+
+    // 一覧の行の「…」→「日本語で文字起こしし直す…」→ 確かめの窓 → 文字起こしし直す
+    const items = await openRowMenu(entryOf(name));
+    await snap(sc, "speech-row-menu");
+    check("一覧の行の「…」に「日本語で文字起こしし直す…」", items && menuItemsText(items).includes("日本語で文字起こしし直す…") && !items.find((b) => norm(b.firstChild?.textContent) === "日本語で文字起こしし直す…")?.disabled, menuItemsText(items));
+    items?.find((b) => norm(b.firstChild?.textContent) === "日本語で文字起こしし直す…")?.click();
+    const dt = await waitFor(() => (dialogTitle().includes("を日本語で文字起こしし直しますか？") ? dialogTitle() : null), 3000);
+    check("確かめの窓（題に録音の名前）", dt === `「${name}」を日本語で文字起こしし直しますか？`, dt || dialogTitle());
+    const est = await waitFor(() => (dialogBody()[0]?.includes("所要時間の目安") ? dialogBody()[0] : null), 5000);
+    check("本文: 聞き分けは使い回し、所要時間の目安", Boolean(est) && est.includes("声の聞き分けは前回の結果を使い"), dialogBody().join(" ／ "));
+    check("本文: 付けた名前は残り、手直しは消える", dialogBody()[1] === "付けた名前は残ります。文字起こしの画面での手直し（直した文字など）は消えます。保存したファイルは消えません。", dialogBody()[1]);
+    check("決めるボタンは青（消す操作ではない）", button("文字起こしし直す")?.classList.contains("btn-primary"));
+    await snap(sc, "speech-relang-dialog");
+    lastDone = null;
+    await clickWhen("文字起こしし直す");
+    check("処理中に「日本語の録音として文字起こししています。」（選んだので「自動」の一言は無い）", await waitFor(() => bodyText().includes("日本語の録音として文字起こししています。"), 60000, 200));
+    await waitNaming(sc, L);
+    check("文字起こしし直すと、言語は日本語・選んだ", lastDone?.language === "ja" && !lastDone?.languageDetected, `${lastDone?.language}・${lastDone?.languageDetected}`);
+    check("付けた名前は残る", lastDone?.names?.[first] === "Matsumoto", JSON.stringify(lastDone?.names));
+    check("上の段に言語を出さない（日本語の画面で日本語の録音）", await waitFor(() => headMeta() && !headMeta().includes("英語") && !headMeta().includes("日本語"), 5000), headMeta());
+    const items2 = await openRowMenu(entryOf(name));
+    check("一覧の行の「…」は「英語で文字起こしし直す…」に変わる", menuItemsText(items2).includes("英語で文字起こしし直す…"), menuItemsText(items2));
+    escape();
+    await sleep(200);
+  }
+
   // ---- 実録音（中身は出さず、時間と件数だけ） ------------------------------------------------
 
   async function realScenario(sc) {
@@ -1076,9 +1181,18 @@
     await overflowCheck("新しい録音の画面（英語）");
     const start = await chooseFile(sc.recording, L);
     await overflowCheck("新しい録音の画面・選んだあと（英語）");
+    // 約束 版15: 録音の言語を選ぶ所（英語の画面）。前の「日本語の録音だけ」の断りは無くした
+    const esel = speechSelect();
+    check(
+      "英語の画面に「Spoken language」（Detect automatically・日本語・English）・「日本語だけ」の断りは無い",
+      esel && [...esel.options].map((o) => o.text).join("|") === "Detect automatically|日本語|English" && bodyText().includes("Spoken language") && !bodyText().includes("Japanese recordings only"),
+      esel ? [...esel.options].map((o) => o.text).join("|") : "無い",
+    );
     start.click();
     const w = await waitNaming(sc, L);
     check("処理が終わって話者のタブ（英語）", tab() === "Speakers", `${fmt(w.sec)} 秒`);
+    check("日本語の録音を「自動」で日本語と見分ける（英語の画面でも）", lastDone?.language === "ja" && lastDone?.languageDetected === true, `${lastDone?.language}・${lastDone?.languageDetected}`);
+    check("英語の画面で日本語の録音は、上の段に「Japanese」", await waitFor(() => headMeta().endsWith(" · Japanese"), 5000), headMeta());
     const labels = [...new Set(buttons().map((b) => norm(b.textContent).match(/^(Speaker [A-Z]+)/)?.[1]).filter(Boolean))];
     check("話者が英語のラベル（Speaker A…）", labels.length > 0 && (!sc.expectSpeakers || labels.length === sc.expectSpeakers), labels.join(", "));
     const name = sc.recording.split("/").pop();
@@ -1322,7 +1436,7 @@
     const h1 = (await invoke("list_history")).find((i) => nameOf(i.path) === n1);
     check("開き直しても、エンジンの一覧に最後に保存したファイル（約束 版12）", h1 && JSON.stringify(h1.savedFiles) === JSON.stringify(savedTo), JSON.stringify(h1?.savedFiles));
     const items1 = await openRowMenu(entryOf(n1));
-    check("開いていない1本目の「…」の「Finder で表示」を押せる", menuItemsText(items1) === "Finder で表示|削除…", menuItemsText(items1));
+    check("開いていない1本目の「…」の「Finder で表示」を押せる", menuItemsText(items1) === "Finder で表示|英語で文字起こしし直す…|削除…", menuItemsText(items1));
     escape();
     await waitFor(() => !document.querySelector(".objects-row-menu"), 2000);
     // 1本目を開く → 閉じたときの話者のタブに、入れかけの名前のまま
@@ -1454,6 +1568,7 @@
     else if (sc.name === "photo") await photoScenario(sc);
     else if (sc.name === "screens") await screensScenario(sc);
     else if (sc.name === "screens2") await screens2Scenario(sc);
+    else if (sc.name === "speech") await speechScenario(sc);
     else if (sc.name === "real") await realScenario(sc);
     else if (sc.name === "history1") return await history1(sc);
     else if (sc.name === "history2") await history2(sc);

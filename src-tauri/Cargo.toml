@@ -1,6 +1,6 @@
 [package]
 name = "kikiwake"
-version = "1.1.2"
+version = "1.2.0"
 description = "Kikiwake（聞き分け）: 話者付き文字起こし。処理はすべてこの PC の中で行う"
 edition = "2021"
 publish = false

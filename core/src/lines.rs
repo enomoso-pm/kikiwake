@@ -89,15 +89,15 @@ pub fn clean_names(names: Option<&Names>) -> Names {
     out
 }
 
-/// 結果の画面の行。名前を付ける前の発話に、変わらない id・ラベル・当てた名前を付ける。
-pub fn lines(words: &[Word], turns: &[Turn], names: Option<&Names>) -> Vec<LineRow> {
+/// 結果の画面の行。名前を付ける前の発話に、変わらない id・ラベル・当てた名前を付ける。lang は録音の言語
+pub fn lines(words: &[Word], turns: &[Turn], names: Option<&Names>, lang: Lang) -> Vec<LineRow> {
     let lm = merge::label_map(turns);
     let mut resolved = Names::new();
     for (k, v) in clean_names(names) {
         resolved.insert(lm.get(&k).cloned().unwrap_or(k), v);
     }
-    let assigned = merge::labeled_words(words, turns, 1.0);
-    merge::group_ranges(&assigned, &Names::new(), 1.5, 90.0)
+    let assigned = merge::labeled_words(words, turns, 1.0, lang);
+    merge::group_ranges(&assigned, &Names::new(), 1.5, 90.0, lang)
         .into_iter()
         .filter(|g| !g.utt.text.is_empty())
         .enumerate()
@@ -178,18 +178,16 @@ fn edited(rows: &[LineRow], edits: &LineEdits) -> Vec<Edited> {
         .collect()
 }
 
-const SENT_END: [&str; 5] = ["。", "？", "！", "?", "!"];
-
-/// 同じ名前の隣り合う行を1行にまとめる（merge の group_utterances と同じ条件を、行の単位で）。
-fn merge_rows(rows: &[Edited], merge_gap: f64, max_utt_sec: f64) -> Vec<Utterance> {
+/// 同じ名前の隣り合う行を1行にまとめる（merge の group_utterances と同じ条件を、行の単位で）。文末の記号は録音の言語 lang で決める
+fn merge_rows(rows: &[Edited], merge_gap: f64, max_utt_sec: f64, lang: Lang) -> Vec<Utterance> {
+    let ends = merge::sent_end(lang);
     let mut groups: Vec<Edited> = Vec::new();
     for r in rows {
         let join = match groups.last() {
             Some(cur) => {
                 cur.speaker == r.speaker
                     && r.raw_start - cur.raw_end <= merge_gap
-                    && !(cur.raw_end - cur.raw_start > max_utt_sec
-                        && SENT_END.iter().any(|m| pycompat::rstrip(&cur.raw).ends_with(m)))
+                    && !(cur.raw_end - cur.raw_start > max_utt_sec && ends.iter().any(|m| pycompat::rstrip(&cur.raw).ends_with(m)))
             }
             None => false,
         };
@@ -266,7 +264,8 @@ pub fn render_txt(utts: &[Utterance], meta: &Meta, lang: Lang) -> String {
 
 /// 保存する中身 [(ファイル名, 文字列)]。名前が1つでも使われていれば transcript_named.*、無ければ transcript.*（Python 版と同じ名前）。
 /// アプリの保存では、エンジンが録音の名前入り（「<元の名前>_文字起こし.md」。約束 版12）に付け替える（中身はこのまま）。
-/// lang は画面の言語（約束 版7）。日本語は Python 版と同じ中身、英語は見出し・確認用の欄・「話者A」「不明」を英語にする（ファイル名は同じ）
+/// lang は画面の言語（約束 版7）。日本語は Python 版と同じ中身、英語は見出し・確認用の欄・「話者A」「不明」を英語にする（ファイル名は同じ）。
+/// 録音の言語（行のまとめ方・誤認識文のよけ方）は meta の language（無ければ日本語）
 pub fn save_files(
     words: &[Word],
     turns: &[Turn],
@@ -276,9 +275,10 @@ pub fn save_files(
     formats: &[SaveFormat],
     lang: Lang,
 ) -> Vec<(String, String)> {
-    let rows = lines(words, turns, names);
+    let speech = meta.speech_lang();
+    let rows = lines(words, turns, names, speech);
     let ed = edited(&rows, edits);
-    let utts = merge_rows(&ed, 1.5, 90.0);
+    let utts = merge_rows(&ed, 1.5, 90.0, speech);
     let tt = saved_talk_time(turns, names, &rows, &ed);
     let named = rows.iter().zip(&ed).any(|(r, e)| e.speaker != r.line.label && e.speaker != UNKNOWN);
     let stem = if named { "transcript_named" } else { "transcript" };
@@ -299,10 +299,10 @@ pub fn save_files(
 }
 
 /// 保存するファイルと同じ発言（手直しを当て、同じ名前の隣り合う行を1行にまとめたもの。確認用も含む）。
-/// マニュアルの素材の timeline で、区間ごとに発言を並べるのに使う（screens.rs）
-pub fn saved_utterances(words: &[Word], turns: &[Turn], names: Option<&Names>, edits: &LineEdits) -> Vec<Utterance> {
-    let rows = lines(words, turns, names);
-    merge_rows(&edited(&rows, edits), 1.5, 90.0)
+/// マニュアルの素材の timeline で、区間ごとに発言を並べるのに使う（screens.rs）。lang は録音の言語
+pub fn saved_utterances(words: &[Word], turns: &[Turn], names: Option<&Names>, edits: &LineEdits, lang: Lang) -> Vec<Utterance> {
+    let rows = lines(words, turns, names, lang);
+    merge_rows(&edited(&rows, edits), 1.5, 90.0, lang)
 }
 
 /// 保存先に書く。同じ名前のファイルがあり overwrite でないときは、何も書かずにその一覧を返す（画面が確かめる）。

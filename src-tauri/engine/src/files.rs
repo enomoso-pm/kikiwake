@@ -71,6 +71,8 @@ pub fn inspect_file(engine: &Engine, path: &Path) -> Result<FileInfo, AppError> 
             // 版6: 前回の書き起こしまでそろっていれば、書き起こしをやり直さずに数秒で名前付けへ進む（4.5 時間の録音で実測 1.2 秒）。
             // 取り出した音声は使い終えたら消している（tidy.rs）ので、始めると元の録音から取り出し直す（68 分の録音で 1.2 秒）
             let result_reusable = transcript_reusable(&engine.paths, &job);
+            // 版15: 違う言語を選ぶと書き起こしからやり直すので、そのときの目安も返す
+            let estimate_redo = result_reusable.then(|| fi.estimate.clone());
             if result_reusable {
                 fi.estimate = Estimate { min_sec: 1, max_sec: 10 };
             }
@@ -79,6 +81,9 @@ pub fn inspect_file(engine: &Engine, path: &Path) -> Result<FileInfo, AppError> 
                 diarization_reusable: job.diarization().is_file(),
                 processed_at: old.processed_at,
                 result_reusable,
+                // 版15: 前回の書き起こしの言語（違う言語を選んで始めると書き起こしからやり直す）
+                language: crate::job::transcript_language(&job).map(|s| s.language),
+                estimate_redo,
             });
         }
     }

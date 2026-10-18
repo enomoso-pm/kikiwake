@@ -9,9 +9,11 @@ export interface DialogProps {
   confirmLabel: string;
   onCancel: () => void;
   onConfirm: () => void;
+  /** 決める側のボタンの色（初めは消す・止める向けの赤。版15 の「文字起こしし直す」は青） */
+  confirmTone?: "danger" | "primary";
 }
 
-export function Dialog({ title, children, cancelLabel, confirmLabel, onCancel, onConfirm }: DialogProps) {
+export function Dialog({ title, children, cancelLabel, confirmLabel, onCancel, onConfirm, confirmTone = "danger" }: DialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -48,7 +50,7 @@ export function Dialog({ title, children, cancelLabel, confirmLabel, onCancel, o
           <button ref={cancelRef} type="button" className="btn btn-secondary" onClick={onCancel}>
             {cancelLabel}
           </button>
-          <button ref={confirmRef} type="button" className="btn btn-danger" onClick={onConfirm}>
+          <button ref={confirmRef} type="button" className={`btn btn-${confirmTone}`} onClick={onConfirm}>
             {confirmLabel}
           </button>
         </div>

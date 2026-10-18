@@ -210,7 +210,7 @@ pub fn write_zip(paths: &Paths, job: &JobDir, parts: &ZipParts, lang: Lang, dest
         fs::write(&spec, serde_json::json!({ "maxWidth": MAX_WIDTH, "items": items }).to_string()).map_err(|e| io_error(&e, "spec.json"))?;
         engines::frames_export(paths, Path::new(&src.path), &spec, &Cancel::new())?;
         // 2. 文書（timeline・保存する .md と同じ文字起こし・README）
-        let utts = lines::saved_utterances(parts.words, parts.turns, parts.names, parts.edits);
+        let utts = lines::saved_utterances(parts.words, parts.turns, parts.names, parts.edits, parts.meta.speech_lang());
         let title = parts.meta.title.clone().unwrap_or_default();
         let transcript = lines::save_files(parts.words, parts.turns, parts.names, parts.edits, parts.meta, &[SaveFormat::Md], lang)
             .into_iter()

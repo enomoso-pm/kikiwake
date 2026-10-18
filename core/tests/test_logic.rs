@@ -5,6 +5,7 @@ use kikiwake_core::merge::{
     label_map, talk_time,
 };
 use kikiwake_core::diar::parse_nemo_segment;
+use kikiwake_core::lang::Lang;
 use kikiwake_core::speakers::{name_hints, pick_samples};
 use kikiwake_core::wav;
 
@@ -77,7 +78,7 @@ fn group_labels_follow_arrival_order() {
 fn group_japanese_fragments_become_one_utterance() {
     let turns = [t(0.0, 3.0, "s0"), t(3.5, 6.0, "s1")];
     let words = [w(0.1, 0.3, "ク"), w(0.3, 0.5, "ラ"), w(0.5, 0.7, "ス"), w(0.7, 1.0, "です。"), w(3.6, 4.0, "はい。")];
-    let utts = build_transcript(&words, &turns, None, 1.0, 1.5);
+    let utts = build_transcript(&words, &turns, None, 1.0, 1.5, Lang::Ja);
     assert_eq!(pairs(&utts), [("話者A", "クラスです。"), ("話者B", "はい。")]);
 }
 
@@ -87,7 +88,7 @@ fn group_names_merge_split_person() {
     let turns = [t(0.0, 1.0, "speaker_0"), t(1.2, 2.0, "speaker_1")];
     let words = [w(0.1, 0.9, "前半"), w(1.3, 1.9, "後半")];
     let n = names(&[("話者A", "松本"), ("speaker_1", "松本")]);
-    let utts = build_transcript(&words, &turns, Some(&n), 1.0, 1.5);
+    let utts = build_transcript(&words, &turns, Some(&n), 1.0, 1.5, Lang::Ja);
     assert_eq!(pairs(&utts), [("松本", "前半後半")]);
 }
 
@@ -102,7 +103,7 @@ fn group_long_monologue_is_split_at_sentence_end() {
             overlap: false,
         })
         .collect();
-    let utts = group_utterances(&aw, &Names::new(), 1.5, 90.0);
+    let utts = group_utterances(&aw, &Names::new(), 1.5, 90.0, Lang::Ja);
     assert!(utts.len() > 1);
     assert!(utts[..utts.len() - 1].iter().all(|u| u.text.ends_with('。')));
 }
@@ -119,7 +120,7 @@ fn group_hallucination_phrase_is_quarantined_but_real_speech_stays() {
         w(2.5, 2.7, "聴"),
         w(2.7, 3.5, "ありがとうございました。"),
     ];
-    let utts = build_transcript(&words, &turns, None, 1.0, 1.5);
+    let utts = build_transcript(&words, &turns, None, 1.0, 1.5, Lang::Ja);
     assert_eq!(pairs(&utts), [("話者A", "思ってます。"), (UNKNOWN, "ご視聴ありがとうございました。")]);
 }
 
@@ -152,7 +153,7 @@ fn speakers_name_hints() {
         u(706.0, 710.0, "話者B", "はい、説明します。"),
         u(711.0, 715.0, "話者A", "今日の議題です。"),
     ];
-    let h = name_hints(&utts, 600.0);
+    let h = name_hints(&utts, 600.0, Lang::Ja);
     assert_eq!(h["話者A"][0].name, "松本");
     let b = &h["話者B"][0];
     let sources: Vec<(&str, i64)> = b.sources.iter().map(|(k, v)| (k.as_str(), *v)).collect();
@@ -164,7 +165,7 @@ fn speakers_name_hints() {
 fn speakers_name_hints_moushimashite_without_punctuation() {
     // 実録音で取りこぼした形（句読点なしの「私〇〇と申しまして」）を架空の名前で再現
     let utts = [u(150.0, 170.0, "話者A", "ちょっと自己紹介させてくださいはい私山田と申しまして今の会社は2社目です")];
-    assert_eq!(name_hints(&utts, 600.0)["話者A"][0].name, "山田");
+    assert_eq!(name_hints(&utts, 600.0, Lang::Ja)["話者A"][0].name, "山田");
 }
 
 #[test]

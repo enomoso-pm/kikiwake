@@ -1,7 +1,7 @@
 // 画面の文字（英語）。形は ja.ts と同じ（Messages）。用語は ja.ts の頭の決まりに合わせる
 // （transcript / voice separation / speaker / name / Unassigned（保存したファイルの見出しと同じ）/ edits / Stopped → Resume）。
 // エンジン（Rust）が日本語で返す文は、種類の目印（エラーの code・動作条件の文・モデルの id）で英語にする。知らない文はそのまま出す
-import type { AppError, EnvironmentItem, ModelId, RepeatNotice, SpeakerWarning, Stage } from "@contract/types";
+import type { AppError, EnvironmentItem, ModelId, RepeatNotice, SpeakerWarning, SpeechLanguage, Stage } from "@contract/types";
 import type { Messages } from "./ja";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -124,7 +124,6 @@ export const en: Messages = {
     or: "or",
     pick: "Choose file",
     formats: "Supported formats: mp4, mov, m4a (Voice Memos), mp3, wav",
-    japaneseOnly: "Transcription currently supports Japanese recordings only.",
     another: "Choose another file",
     meta: (clock: string, size: string, format: string) => `${clock} · ${size} · ${format}`,
     reuseResultTitle: "Using the previous transcript",
@@ -139,6 +138,13 @@ export const en: Messages = {
     screens: "Also take screen images for a manual",
     screensHint:
       "Takes an image of each scene from a screen-sharing recording. When you save, you can write a zip with the transcript, the images, and instructions for an AI. People on camera are blacked out.",
+    language: "Spoken language",
+    languageAuto: "Detect automatically",
+    languageOption: (l: SpeechLanguage) => (l === "ja" ? "日本語" : "English"),
+    languageAutoHint: "Listens to the speech and decides between Japanese and English.",
+    relangTitle: "Transcribing again in a different language",
+    relangBody: (before: SpeechLanguage, after: SpeechLanguage) =>
+      `It was transcribed in ${before === "ja" ? "Japanese" : "English"} last time. The previous voice separation is reused, and it starts from converting speech to text in ${after === "ja" ? "Japanese" : "English"}.`,
   },
 
   /** Recording-first layout (2026-09-27): the list of recordings on the left, the chosen recording on the right. Same shape as ja.ts */
@@ -165,6 +171,7 @@ export const en: Messages = {
     speakers: (n: number, named: boolean) => `${n} ${plural(n, "speaker", "speakers")} · ${named ? "named" : "no names"}`,
     people: (shown: string[], rest: number) => (rest > 0 ? `${shown.join(", ")} + ${rest} more` : shown.join(", ")),
     processedOn: (day: string) => `Transcribed ${day}`,
+    speechLanguage: (l: SpeechLanguage) => (l === "ja" ? "Japanese" : "English"),
     fresh: "Finished transcribing (not opened yet)",
     source: {
       missing: "Original file not found",
@@ -185,6 +192,13 @@ export const en: Messages = {
     rowMenuAria: (name: string) => `More actions for “${name}”`,
     notSavedYet: "Not saved yet",
     remove: "Delete…",
+    relang: (to: SpeechLanguage) => `Transcribe again in ${to === "ja" ? "Japanese" : "English"}…`,
+    relangNeedsSource: "Needs the original file",
+    relangTitle: (name: string, to: SpeechLanguage) => `Transcribe “${name}” again in ${to === "ja" ? "Japanese" : "English"}?`,
+    relangBody: (estimate: string | null) =>
+      `The previous voice separation is reused, and only the speech-to-text step runs again${estimate ? ` (estimated time: ${estimate.charAt(0).toLowerCase()}${estimate.slice(1)})` : ""}.`,
+    relangKeeps: "Names you gave are kept. Edits on the Transcript tab (such as corrected text) are discarded. Files you saved are not deleted.",
+    relangConfirm: "Transcribe again",
     dequeue: "Remove from queue",
     stoppedTitle: "Stopped",
     resume: "Resume",
@@ -265,6 +279,8 @@ export const en: Messages = {
     notKept: "Voice separation hadn't finished yet. Resuming starts from the beginning.",
     local: "Transcription happens only on this computer.",
     screensNote: "Also taking screen images for a manual (alongside the transcription).",
+    languageNote: (l: SpeechLanguage, detected: boolean) =>
+      `Transcribing as ${l === "ja" ? "Japanese" : "English"} speech${detected ? " (detected automatically)" : ""}.`,
     cancel: "Stop",
     retry: "Resume",
   },

@@ -19,6 +19,7 @@ import type {
   SaveRequest,
   SaveResult,
   SpeakerCard,
+  SpeechLanguage,
   TranscriptView,
   UnresolvedHint,
   UpdateInfo,
@@ -53,9 +54,11 @@ export interface KikiwakeApi {
   // ---- 画面3 処理中 ----
   /**
    * 書き起こしは正確さ優先（Whisper large-v3）だけ。版1の quality は無くした。
-   * 版13: screens なら、マニュアル用に画面の絵も取り出す（録画のとき。文字起こしと同時に進め、JobDone.screens で数を返す）
+   * 版13: screens なら、マニュアル用に画面の絵も取り出す（録画のとき。文字起こしと同時に進め、JobDone.screens で数を返す）。
+   * 版15: language は録音の言語。省くと自動で見分ける（前回の書き起こしがあれば、その言語のまま使い回す）。
+   * 前回の書き起こしと違う言語なら、書き起こしからやり直す（話者の判定は使い回す）
    */
-  startJob(req: { path: string; screens?: boolean }): Promise<JobStarted>;
+  startJob(req: { path: string; screens?: boolean; language?: SpeechLanguage }): Promise<JobStarted>;
   /** 中止。onJobFailed に code "cancelled" が届く。話者判定の結果は残る */
   cancelJob(jobId: string): Promise<void>;
   onJobProgress(cb: (p: JobProgress) => void): Unsubscribe;

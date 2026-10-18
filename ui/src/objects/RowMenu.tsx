@@ -8,11 +8,11 @@ import { isEscape } from "../lib/keys";
 import { useApp, useIsMac } from "../store/state";
 import { MoreIcon } from "./icons";
 import type { Entry } from "./model";
-import { deleteEntry, revealSavedOf } from "./store";
+import { askRelang, deleteEntry, revealSavedOf } from "./store";
 
 type HistoryEntry = Extract<Entry, { kind: "history" }>;
 
-const MENU_WIDTH = 220;
+const MENU_WIDTH = 240;
 
 export function RowMenu({ entry, name, onOpenChange }: { entry: HistoryEntry; name: string; onOpenChange: (open: boolean) => void }) {
   const t = useT();
@@ -25,6 +25,10 @@ export function RowMenu({ entry, name, onOpenChange }: { entry: HistoryEntry; na
   // 開いている録音は画面の値（保存したばかりでも押せる）、ほかはエンジンの一覧の値（約束 版12）
   const liveSaved = useApp((s) => (s.job?.jobId === entry.item.jobId && s.job.status === "done" ? s.lastSaved.length : 0));
   const canReveal = liveSaved > 0 || (entry.item.savedFiles?.length ?? 0) > 0;
+  // 版15: 書き終えた録音を、もう一方の言語で文字起こしし直す（元のファイルが要る。言語の記録が無い前の版の録音は日本語）
+  const done = entry.item.status === "done";
+  const other = (entry.item.language ?? "ja") === "ja" ? "en" : "ja";
+  const canRelang = done && entry.item.sourceState === "ok";
   const open = pos !== null;
 
   const close = (focusButton = false) => {
@@ -130,6 +134,12 @@ export function RowMenu({ entry, name, onOpenChange }: { entry: HistoryEntry; na
                 {t.common.reveal(isMac)}
                 {!canReveal ? <span className="objects-menu-note">{o.notSavedYet}</span> : null}
               </button>
+              {done ? (
+                <button type="button" role="menuitem" disabled={!canRelang} onClick={() => run(() => askRelang(entry.item, other))}>
+                  {o.relang(other)}
+                  {!canRelang ? <span className="objects-menu-note">{o.relangNeedsSource}</span> : null}
+                </button>
+              ) : null}
               <button type="button" role="menuitem" className="danger" onClick={() => run(() => deleteEntry(entry.item))}>
                 {o.remove}
               </button>

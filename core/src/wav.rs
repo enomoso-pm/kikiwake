@@ -107,3 +107,25 @@ pub fn cut(src: &Path, start: f64, end: f64, dst: &Path, pad: f64, max_sec: f64)
     f.read_exact(&mut frames)?;
     write(dst, info.channels, info.sampwidth, info.rate, &frames)
 }
+
+/// WAV からいくつかの区間（秒。時刻順）を切り出し、つないで1つの WAV にする（録音の言語を見分けるときに、話している所だけを渡す。
+/// 2026-10-18）。音声の長さを超える所は詰める
+pub fn cut_ranges(src: &Path, ranges: &[(f64, f64)], dst: &Path) -> io::Result<()> {
+    let mut f = File::open(src)?;
+    let info = read_info(&mut f)?;
+    let sr = info.rate as f64;
+    let frame = info.channels as u64 * info.sampwidth as u64;
+    let mut frames = Vec::new();
+    for &(s, e) in ranges {
+        let a = ((s.max(0.0) * sr) as u64).min(info.nframes);
+        let b = ((e.max(0.0) * sr) as u64).min(info.nframes);
+        if b <= a {
+            continue;
+        }
+        let mut buf = vec![0u8; ((b - a) * frame) as usize];
+        f.seek(SeekFrom::Start(info.data_offset + a * frame))?;
+        f.read_exact(&mut buf)?;
+        frames.extend_from_slice(&buf);
+    }
+    write(dst, info.channels, info.sampwidth, info.rate, &frames)
+}

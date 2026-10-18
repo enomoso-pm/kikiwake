@@ -1,6 +1,6 @@
 [package]
 name = "kikiwake-engine"
-version = "1.1.2"
+version = "1.2.0"
 edition = "2021"
 publish = false
 description = "Kikiwake の処理の流れ（エンジンの呼び出し・作業フォルダ・モデルの取得・保存）。画面（Tauri）には頼らない"

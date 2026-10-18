@@ -1,6 +1,6 @@
 // 録音が主役の画面（案A）の一覧の中身を決める計算（画面の部品を持たない。テストは model.test.ts）。
 // 一覧に並ぶのは「処理中の録音」「順番待ちの録音」「履歴の録音」。どれも同じ録音というものの状態の違いとして扱う
-import type { HistoryItem, Names, NamedSpeakers, SourceState, TalkTime } from "@contract/types";
+import type { HistoryItem, Names, NamedSpeakers, SourceState, SpeechLanguage, TalkTime } from "@contract/types";
 import type { JobView } from "../store/state";
 
 export interface QueueItem {
@@ -10,6 +10,8 @@ export interface QueueItem {
   durationSec: number;
   /** 版13: マニュアル用に、画面の絵も取り出す */
   screens?: boolean;
+  /** 版15: 録音の言語（省くと自動で見分ける） */
+  language?: SpeechLanguage;
 }
 
 export type Entry =

@@ -11,6 +11,12 @@ import { PlayProgress, SamplePlayButton } from "../components/PlayButton";
 import { useT } from "../i18n";
 import { labelColors } from "../lib/colors";
 import { percentText, truncate } from "../lib/format";
+
+/**
+ * サンプル・確認用の手がかりの文の、画面の側の念のための上限。字数はエンジンが録音の言語でそろえて返す
+ * （日本語 70 字・英語 110 字。約束 版15）ので、ここでは切り直さない（前は 70 字で、英語の 110 字を切っていた）
+ */
+const SAMPLE_TEXT_MAX = 120;
 import { cleanName, formatHintSources, formatHints, groupNames, nameKey, type NameGrouping } from "../lib/names";
 import { selectLabel, setName, stepLabel } from "../store/naming";
 import { useApp } from "../store/state";
@@ -223,7 +229,7 @@ function SpeakerDetail({
                   {formatTimestamp(s.start, durationSec)}
                 </span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-                  <span style={{ fontSize: 14, lineHeight: 1.6 }}>{truncate(s.text)}</span>
+                  <span style={{ fontSize: 14, lineHeight: 1.6 }}>{truncate(s.text, SAMPLE_TEXT_MAX)}</span>
                   <PlayProgress playKey={playKey} />
                 </div>
               </div>
@@ -286,7 +292,7 @@ function UnresolvedHints({
                   {formatTimestamp(c.start, durationSec)}
                 </span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-                  <span style={{ fontSize: 14, lineHeight: 1.6 }}>{truncate(c.text)}</span>
+                  <span style={{ fontSize: 14, lineHeight: 1.6 }}>{truncate(c.text, SAMPLE_TEXT_MAX)}</span>
                   <PlayProgress playKey={playKey} />
                 </div>
               </div>

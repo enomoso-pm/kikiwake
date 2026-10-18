@@ -1,12 +1,12 @@
 // 「＋ 新しい録音」: ファイル選択（UI 画面仕様書 §5）。ドロップは api.onFileDrop で受ける（store/file.ts）。
 // アプリの中ではドラッグ中の知らせも api.onFileDragOver で届く（HTML5 の知らせは届かない。約束 版6）。枠は data-drop-zone で探す
-import type { DragEvent, ReactNode } from "react";
+import { useId, type DragEvent, type ReactNode } from "react";
 import { ErrorBand } from "../components/ErrorBand";
 import { UpdateBand } from "../components/UpdateBand";
 import { useT } from "../i18n";
 import { fileFormatLabel, formatClock, formatEstimate, formatFileSize, formatMonthDay } from "../lib/format";
-import { clearFile, pickFile, setDragOver, setScreensOn } from "../store/file";
-import { useApp } from "../store/state";
+import { clearFile, pickFile, setDragOver, setScreensOn, setSpeechChoice } from "../store/file";
+import { useApp, type SpeechChoice } from "../store/state";
 
 function DropZone() {
   const t = useT();
@@ -44,8 +44,6 @@ function DropZone() {
         {t.file.pick}
       </button>
       <span style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 6 }}>{t.file.formats}</span>
-      {/* 書き起こしは今は日本語だけ（日本語の画面では出さない） */}
-      {t.file.japaneseOnly ? <span style={{ fontSize: 13, color: "var(--ink-3)" }}>{t.file.japaneseOnly}</span> : null}
     </div>
   );
 }
@@ -68,10 +66,17 @@ export function FileScreen({ runningName, start, notice }: FileScreenProps) {
   const fileError = useApp((s) => s.fileError);
   const startError = useApp((s) => s.startError);
   const screensOn = useApp((s) => s.screensOn);
+  const choice = useApp((s) => s.speechChoice);
+  const languageId = useId();
 
   const previousDay = file?.previous?.diarizationReusable ? formatMonthDay(file.previous.processedAt) : null;
+  // 版15: 前回の書き起こしと違う言語を選んだら、書き起こしからやり直す（声の聞き分けは使い回す）。自動なら前回の言語のまま
+  const previousLanguage = file?.previous?.language;
+  const relang = choice !== "auto" && previousLanguage !== undefined && previousLanguage !== choice ? { before: previousLanguage, after: choice } : null;
+  const reuseResult = Boolean(file?.previous?.resultReusable) && !relang;
   // 版13: マニュアル用にするときの所要時間の目安（画面の読み取りは文字起こしと同時に進める）
   const screensEstimate = screensOn && file?.hasVideo ? file.estimateScreens : undefined;
+  const estimate = relang && file?.previous?.estimateRedo ? file.previous.estimateRedo : file?.estimate;
 
   return (
     <div className="page-scroll">
@@ -107,7 +112,15 @@ export function FileScreen({ runningName, start, notice }: FileScreenProps) {
 
             {notice ?? null}
 
-            {file.previous?.resultReusable ? (
+            {relang ? (
+              // 版15: 前回と違う言語を選んだ（書き起こしからやり直す。2026-10-18）
+              <div className="band-info" style={{ display: "flex", flexDirection: "column", gap: 4, padding: "14px 18px" }}>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>{t.file.relangTitle}</span>
+                <span className="pretty" style={{ fontSize: 13, lineHeight: 1.7 }}>
+                  {t.file.relangBody(relang.before, relang.after)}
+                </span>
+              </div>
+            ) : reuseResult ? (
               // 版6: 前回の書き起こしまでそろっている（2026-09-26 決定。仕様書に無い）
               <div className="band-info" style={{ display: "flex", flexDirection: "column", gap: 4, padding: "14px 18px" }}>
                 <span style={{ fontSize: 14, fontWeight: 600 }}>{t.file.reuseResultTitle}</span>
@@ -145,16 +158,38 @@ export function FileScreen({ runningName, start, notice }: FileScreenProps) {
               </button>
             ) : null}
 
+            {/* 版15: 録音の言語（2026-10-18 決定: 自動で見分ける＋選び直せる。初めは毎回「自動」で、前に選んだものは覚えない） */}
+            <div className="card speech-option">
+              <label htmlFor={languageId} className="nowrap" style={{ fontSize: 13, color: "var(--ink-3)" }}>
+                {t.file.language}
+              </label>
+              <select
+                id={languageId}
+                className="speech-select"
+                value={choice}
+                onChange={(e) => setSpeechChoice(e.target.value as SpeechChoice)}
+              >
+                <option value="auto">{t.file.languageAuto}</option>
+                <option value="ja">{t.file.languageOption("ja")}</option>
+                <option value="en">{t.file.languageOption("en")}</option>
+              </select>
+              {choice === "auto" ? (
+                <span className="pretty" style={{ fontSize: 12, color: "var(--ink-4)", lineHeight: 1.6 }}>
+                  {t.file.languageAutoHint}
+                </span>
+              ) : null}
+            </div>
+
             <div className="card" style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "14px 18px" }}>
               <span className="nowrap" style={{ fontSize: 13, color: "var(--ink-3)" }}>
                 {t.file.estimate}
               </span>
               <strong className="num" style={{ fontSize: 15, fontWeight: 600 }}>
-                {screensEstimate
+                {screensEstimate && !relang
                   ? formatEstimate(screensEstimate.minSec, screensEstimate.maxSec)
-                  : file.previous?.resultReusable
+                  : reuseResult
                     ? t.file.soon
-                    : formatEstimate(file.estimate.minSec, file.estimate.maxSec)}
+                    : formatEstimate((estimate ?? file.estimate).minSec, (estimate ?? file.estimate).maxSec)}
               </strong>
             </div>
 

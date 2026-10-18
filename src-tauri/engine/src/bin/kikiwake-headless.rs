@@ -6,7 +6,8 @@
 //!   kikiwake-headless models
 //!   kikiwake-headless download [whisper-large-v3 nemotron-3-diarization]   （取り終えるまで待つ）
 //!   kikiwake-headless inspect <録音>
-//!   kikiwake-headless run <録音> [--cancel-after <秒>] [--screens]             （処理が終わるまで待つ。--screens はマニュアル用に画面の絵も）
+//!   kikiwake-headless run <録音> [--cancel-after <秒>] [--screens] [--language ja|en|auto]
+//!                                 （処理が終わるまで待つ。--screens はマニュアル用に画面の絵も。--language は録音の言語・無ければ自動で見分ける）
 //!   kikiwake-headless speakers <ID> | hints <ID> | transcript <ID> [--named]
 //!   kikiwake-headless names <ID> <names.json>
 //!   kikiwake-headless save <ID> <保存先> [md,txt,json|none] [--overwrite] [--edits <edits.json>] [--screens]   （--screens はマニュアルの素材の zip も）
@@ -95,7 +96,8 @@ fn main() -> ExitCode {
         "inspect" => out(files::inspect_file(&engine, Path::new(&a(1)))),
         "run" => {
             let screens = args.iter().any(|x| x == "--screens");
-            let started = match engine.start_job_with(Path::new(&a(1)), screens) {
+            let language = args.iter().position(|x| x == "--language").and_then(|i| args.get(i + 1)).and_then(|l| kikiwake_core::lang::Lang::parse(l));
+            let started = match engine.start_job_with(Path::new(&a(1)), screens, language) {
                 Ok(s) => s,
                 Err(e) => return out::<()>(Err(e)),
             };

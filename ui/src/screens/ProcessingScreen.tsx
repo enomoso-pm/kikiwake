@@ -131,6 +131,13 @@ export function ProcessingScreen({ onRetry }: { onRetry: () => void }) {
           ))}
         </div>
 
+        {/* 版15: 決まった録音の言語（書き起こしの段階の頭で決まる。自動で見分けたら、そう書く） */}
+        {running && job.language ? (
+          <div className="band-info pretty" style={{ padding: "12px 18px", fontSize: 13, lineHeight: 1.7 }}>
+            {t.processing.languageNote(job.language, Boolean(job.languageDetected))}
+          </div>
+        ) : null}
+
         {/* 版13: マニュアル用に始めた録音 */}
         {running && job.screens ? (
           <div className="band-info pretty" style={{ padding: "12px 18px", fontSize: 13, lineHeight: 1.7 }}>

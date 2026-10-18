@@ -6,7 +6,7 @@
 //   話者（話者A…。ラベルとは言わない）／名前（話者に付ける呼び名）／確認用（誰の声か決められなかった発言。保存したファイルの見出しと同じ）／
 //   発言（しゃべった1回分）／手直し／中断 → 再開／処理の段階は「音声を取り出す・声を聞き分ける・声を文字にする・まとめる」／
 //   「はじめる」はひらがな（動詞も。2026-09-27 決定）
-import type { AppError, EnvironmentItem, ModelId, RepeatNotice, SpeakerWarning, Stage } from "@contract/types";
+import type { AppError, EnvironmentItem, ModelId, RepeatNotice, SpeakerWarning, SpeechLanguage, Stage } from "@contract/types";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 /** 繰り返しの知らせの時刻（エンジンと同じ h:mm:ss） */
@@ -113,8 +113,6 @@ export const ja = {
     or: "または",
     pick: "ファイルを選ぶ",
     formats: "対応形式：mp4・mov・m4a（ボイスメモ）・mp3・wav",
-    /** 文字起こしが日本語だけであることの断り。日本語の画面では出さない（空） */
-    japaneseOnly: "",
     another: "別のファイルにする",
     meta: (clock: string, size: string, format: string) => `${clock} ・ ${size} ・ ${format}`,
     reuseResultTitle: "前回の文字起こしを使います",
@@ -130,6 +128,15 @@ export const ja = {
     screens: "マニュアル用に、画面の絵も取り出す",
     screensHint:
       "画面共有の録画から、場面ごとの画面の絵を取り出します。保存のときに、文字起こしと絵をまとめた zip（AI に渡す説明つき）を書き出せます。カメラに映った人は黒く塗ります。",
+    /** 版15（2026-10-18 決定: 自動で見分ける＋選び直せる。日本語と英語）。選ぶ所の言語の名前は、その言語の書き方（日本語・English） */
+    language: "録音の言語",
+    languageAuto: "自動で見分ける",
+    languageOption: (l: SpeechLanguage): string => (l === "ja" ? "日本語" : "English"),
+    languageAutoHint: "話している所を聞いて、日本語か英語かを決めます。",
+    /** 前回と違う言語を選んだとき（書き起こしからやり直す。聞き分けは使い回す） */
+    relangTitle: "言語を変えて文字起こしし直します",
+    relangBody: (before: SpeechLanguage, after: SpeechLanguage) =>
+      `前回は${before === "ja" ? "日本語" : "英語"}で文字起こししています。声の聞き分けは前回の結果を使い、${after === "ja" ? "日本語" : "英語"}で声を文字にするところからはじめます。`,
   },
 
   /**
@@ -162,6 +169,8 @@ export const ja = {
     /** 名前を付けた録音の一覧の行（約束 版9 の namedSpeakers。2026-09-27 決定）: 発言の多い順に2人と、残りの人数（名前なしも数える） */
     people: (shown: string[], rest: number) => (rest > 0 ? `${shown.join("・")}ほか${rest}人` : shown.join("・")),
     processedOn: (day: string) => `${day}に文字起こし`,
+    /** 版15: 録音の上の段に出す録音の言語（画面の言語と違うときだけ） */
+    speechLanguage: (l: SpeechLanguage): string => (l === "ja" ? "日本語" : "英語"),
     /** 見ていない間に文字起こしが終わり、まだ開いていない録音の「●」 */
     fresh: "文字起こしが終わりました（まだ開いていません）",
     source: {
@@ -188,6 +197,14 @@ export const ja = {
     notSavedYet: "まだ保存していません",
     /** 2026-09-29: 「一覧から消す…」→「削除…」（「一覧」は画面のどこにも出てこない言葉だったため。案3つから選んだ）。何が残るかは確かめの画面で */
     remove: "削除…",
+    /** 版15: 一覧の行の「…」。書き終えた録音を、もう一方の言語で文字起こしし直す（聞き分けは使い回す） */
+    relang: (to: SpeechLanguage) => `${to === "ja" ? "日本語" : "英語"}で文字起こしし直す…`,
+    relangNeedsSource: "元のファイルが要ります",
+    relangTitle: (name: string, to: SpeechLanguage) => `「${name}」を${to === "ja" ? "日本語" : "英語"}で文字起こしし直しますか？`,
+    relangBody: (estimate: string | null) =>
+      `声の聞き分けは前回の結果を使い、声を文字にするところからやり直します${estimate ? `（所要時間の目安 ${estimate}）` : ""}。`,
+    relangKeeps: "付けた名前は残ります。文字起こしの画面での手直し（直した文字など）は消えます。保存したファイルは消えません。",
+    relangConfirm: "文字起こしし直す",
     dequeue: "順番待ちから外す",
     stoppedTitle: "中断しています",
     resume: "再開する",
@@ -281,6 +298,9 @@ export const ja = {
     local: "文字起こしはこの PC の中だけで行っています。",
     /** 版13: マニュアル用に始めた録音 */
     screensNote: "マニュアル用に、画面の絵も取り出しています（文字起こしと同時に進めます）。",
+    /** 版15: 決まった録音の言語（書き起こしの段階の頭で決まる） */
+    languageNote: (l: SpeechLanguage, detected: boolean) =>
+      `${l === "ja" ? "日本語" : "英語"}の録音として文字起こししています${detected ? "（自動で見分けました）" : ""}。`,
     cancel: "中止",
     retry: "再開する",
   },

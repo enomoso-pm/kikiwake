@@ -13,6 +13,7 @@ import { SaveBar } from "../screens/result/SaveBar";
 import { SaveDialog } from "../screens/result/SaveDialog";
 import { useTranscriptModel } from "../screens/result/useTranscriptModel";
 import { SetupScreen } from "../screens/SetupScreen";
+import { chosenLanguage } from "../store/file";
 import { closeSaveDialog, openSaveDialog } from "../store/result";
 import { getState, useApp } from "../store/state";
 import { samePath } from "./model";
@@ -173,8 +174,16 @@ function ChangedFileNotice() {
 function startFromFile(): void {
   const s = getState();
   const f = s.file;
-  // 版13: 録画で「マニュアル用に、画面の絵も取り出す」にチェックを入れていれば
-  if (f) startOrEnqueue(f.path, { name: f.name, durationSec: f.durationSec, ...(s.screensOn && f.hasVideo ? { screens: true } : {}) });
+  // 版13: 録画で「マニュアル用に、画面の絵も取り出す」にチェックを入れていれば。版15: 録音の言語（自動なら省く）
+  const language = chosenLanguage(s.speechChoice);
+  if (f) {
+    startOrEnqueue(f.path, {
+      name: f.name,
+      durationSec: f.durationSec,
+      ...(s.screensOn && f.hasVideo ? { screens: true } : {}),
+      ...(language ? { language } : {}),
+    });
+  }
 }
 
 export function MainPane() {

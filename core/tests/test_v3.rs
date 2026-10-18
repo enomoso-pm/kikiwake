@@ -33,9 +33,9 @@ fn meeting() -> (Vec<Word>, Vec<Turn>) {
 #[test]
 fn line_ids_and_boundaries_do_not_change_with_names() {
     let (w, t) = meeting();
-    let plain = lines::lines(&w, &t, None);
+    let plain = lines::lines(&w, &t, None, Lang::Ja);
     // 話者A と話者B に同じ名前を付けても、画面の行はまとめない（id も区切りも同じ）
-    let named = lines::lines(&w, &t, Some(&names(&[("話者A", "佐藤"), ("話者B", " 佐藤\u{3000}"), ("話者C", "")])));
+    let named = lines::lines(&w, &t, Some(&names(&[("話者A", "佐藤"), ("話者B", " 佐藤\u{3000}"), ("話者C", "")])), Lang::Ja);
     let ids = |v: &[lines::LineRow]| v.iter().map(|r| (r.line.id.clone(), r.line.start, r.line.label.clone())).collect::<Vec<_>>();
     assert_eq!(ids(&plain), ids(&named));
     let spk: Vec<&str> = named.iter().map(|r| r.line.speaker.as_str()).collect();

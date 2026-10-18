@@ -21,6 +21,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::lang::Lang;
 use crate::{patterns, pycompat, pyjson};
 
 pub const UNKNOWN: &str = "不明";
@@ -78,6 +79,16 @@ pub struct Meta {
     pub asr: Option<String>,
     pub created: Option<String>,
     pub audio: Option<String>,
+    /// 録音の言語（書き起こしの言語。2026-10-18 に英語の文字起こしで足した）。無ければ日本語（前の版の書き起こしと Python 版）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<crate::lang::Lang>,
+}
+
+impl Meta {
+    /// 録音の言語（無ければ日本語）
+    pub fn speech_lang(&self) -> crate::lang::Lang {
+        self.language.unwrap_or_default()
+    }
 }
 
 pub(crate) fn cmp_f64(a: f64, b: f64) -> std::cmp::Ordering {
@@ -177,6 +188,16 @@ pub fn assign_speakers(words: &[Word], turns: &[Turn], max_gap: f64, tail: f64) 
 // ---- 発話にまとめる --------------------------------------------------------------------
 
 const SENT_END: [&str; 5] = ["。", "？", "！", "?", "!"];
+/// 英語の文の終わり（"." も。2026-10-18）
+const SENT_END_EN: [&str; 6] = [".", "?", "!", "。", "？", "！"];
+
+/// 文の終わりの記号（長い独話を段落に切る所）。lang は録音の言語
+pub(crate) fn sent_end(lang: Lang) -> &'static [&'static str] {
+    match lang {
+        Lang::Ja => &SENT_END,
+        Lang::En => &SENT_END_EN,
+    }
+}
 
 /// まとめた発話と、その発話に属する語の範囲（assigned の添字）と、整える前の本文。
 /// 本文が空になった発話も含む（group_utterances はそれを除く）。
@@ -186,7 +207,8 @@ pub(crate) struct Group {
     pub raw: String,
 }
 
-pub(crate) fn group_ranges(assigned: &[AssignedWord], names: &Names, merge_gap: f64, max_utt_sec: f64) -> Vec<Group> {
+pub(crate) fn group_ranges(assigned: &[AssignedWord], names: &Names, merge_gap: f64, max_utt_sec: f64, lang: Lang) -> Vec<Group> {
+    let ends = sent_end(lang);
     let mut groups: Vec<Group> = Vec::new();
     for (i, w) in assigned.iter().enumerate() {
         let who = names.get(&w.speaker).unwrap_or(&w.speaker);
@@ -195,8 +217,7 @@ pub(crate) fn group_ranges(assigned: &[AssignedWord], names: &Names, merge_gap: 
                 let cur = &g.utt;
                 cur.speaker == *who
                     && w.start - cur.end <= merge_gap
-                    && !(cur.end - cur.start > max_utt_sec
-                        && SENT_END.iter().any(|m| pycompat::rstrip(&g.raw).ends_with(m)))
+                    && !(cur.end - cur.start > max_utt_sec && ends.iter().any(|m| pycompat::rstrip(&g.raw).ends_with(m)))
             }
             None => false,
         };
@@ -225,29 +246,71 @@ pub(crate) fn group_ranges(assigned: &[AssignedWord], names: &Names, merge_gap: 
 /// 同じ人が merge_gap 秒以内で話し続ける間を1発話にする。既定は merge_gap 1.5・max_utt_sec 90。
 ///
 /// names はラベル → 表示名。同じ名前のラベルは同一人物として連結される。
-/// 長い独話は max_utt_sec を超えたら文末で段落を切る。
-pub fn group_utterances(assigned: &[AssignedWord], names: &Names, merge_gap: f64, max_utt_sec: f64) -> Vec<Utterance> {
-    group_ranges(assigned, names, merge_gap, max_utt_sec)
+/// 長い独話は max_utt_sec を超えたら文末で段落を切る（文末の記号は録音の言語 lang で決める）。
+pub fn group_utterances(assigned: &[AssignedWord], names: &Names, merge_gap: f64, max_utt_sec: f64, lang: Lang) -> Vec<Utterance> {
+    group_ranges(assigned, names, merge_gap, max_utt_sec, lang)
         .into_iter()
         .filter(|g| !g.utt.text.is_empty())
         .map(|g| g.utt)
         .collect()
 }
 
-/// 定番の誤認識文を構成する語だけを「不明」にする（同じ人の本物の発言は本文に残す）。
-pub fn flag_hallucinations(assigned: &mut [AssignedWord]) {
+/// 定番の誤認識文を構成する語だけを「不明」にする（同じ人の本物の発言は本文に残す）。定番の文は録音の言語 lang で決める
+pub fn flag_hallucinations(assigned: &mut [AssignedWord], lang: Lang) {
+    let rx: &regex::Regex = match lang {
+        Lang::Ja => &patterns::HALLUCINATION,
+        Lang::En => &patterns::HALLUCINATION_EN,
+    };
     let mut text = String::new();
     let mut spans = Vec::with_capacity(assigned.len());
     for w in assigned.iter() {
         spans.push((text.len(), text.len() + w.word.len()));
         text.push_str(&w.word);
     }
-    for m in patterns::HALLUCINATION.find_iter(&text) {
+    for m in rx.find_iter(&text) {
         for (w, &(a, b)) in assigned.iter_mut().zip(&spans) {
             if a < m.end() && b > m.start() {
                 w.speaker = UNKNOWN.to_string();
             }
         }
+    }
+    if lang == Lang::En {
+        flag_repeated_sentences(assigned, &text, &spans);
+    }
+}
+
+/// 英語: 3 語以上の同じ文が 3 回以上続いたら、最初の 1 回を残し、あとの語を「不明」にする（確認用へ。2026-10-18）。
+/// AMI の会議（IS1009a）で、静かな 13 秒に Whisper が同じ文を 13 回書き、語の時刻が話者の区間に寄って本文の 1 行に 14 回並んだ
+/// （繰り返しの知らせは 20 回からなので出ない）。短いあいづち（"Okay. Okay. Okay."）は数えない
+fn flag_repeated_sentences(assigned: &mut [AssignedWord], text: &str, spans: &[(usize, usize)]) {
+    // 文の終わり（. ? !）で区切った文（バイトの範囲）と、比べるための形（小文字・空白をそろえる）
+    let mut sents: Vec<(usize, usize, String)> = Vec::new();
+    let mut from = 0;
+    for (i, c) in text.char_indices() {
+        if matches!(c, '.' | '?' | '!') && !text[i + c.len_utf8()..].starts_with(['.', '?', '!']) {
+            let end = i + c.len_utf8();
+            let key = text[from..end].split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+            sents.push((from, end, key));
+            from = end;
+        }
+    }
+    let mut i = 0;
+    while i < sents.len() {
+        let mut j = i + 1;
+        while j < sents.len() && sents[j].2 == sents[i].2 {
+            j += 1;
+        }
+        if j - i >= 3 && sents[i].2.split(' ').count() >= 3 {
+            let (a, b) = (sents[i + 1].0, sents[j - 1].1);
+            for (w, &(s, e)) in assigned.iter_mut().zip(spans) {
+                // 語の真ん中が、2 回目からの文の中にある
+                let mid = (s + e) / 2;
+                if s < e && a <= mid && mid < b {
+                    w.speaker = UNKNOWN.to_string();
+                }
+            }
+        }
+        i = j;
     }
 }
 
@@ -260,8 +323,23 @@ fn resolve_names(lm: &IndexMap<String, String>, names: Option<&Names>) -> Names 
     resolved
 }
 
-/// build_transcript の途中（名前を当てる前）: 表示ラベルに直し、誤認識文を「不明」にした語。
-pub(crate) fn labeled_words(words: &[Word], turns: &[Turn], max_gap: f64) -> Vec<AssignedWord> {
+/// 英語の 1 つの語の部品（" perform"＋"ance"・" it"＋"'s"・" 1"＋".5"）を、最後の部品の話者にそろえる（2026-10-18）。
+/// Whisper の英語のトークンは語の頭に空白が付き、空白の無いトークンは前の語の続き。話者は部品ごとに決めているので、
+/// 話者が替わる境目で語が割れ、次の人の行が "'d be able to …" のように語の途中から始まることがあった（AMI の会議 147 行中 1 行）。
+/// 語の話者は語の終わりで決める（assign_speakers と同じ考え方。Whisper の語の始まりの時刻は早めに付くため）
+fn join_word_pieces(assigned: &mut [AssignedWord]) {
+    for i in (1..assigned.len()).rev() {
+        let w = &assigned[i].word;
+        if !w.is_empty() && !w.starts_with(char::is_whitespace) {
+            let (speaker, overlap) = (assigned[i].speaker.clone(), assigned[i].overlap);
+            assigned[i - 1].speaker = speaker;
+            assigned[i - 1].overlap = overlap;
+        }
+    }
+}
+
+/// build_transcript の途中（名前を当てる前）: 表示ラベルに直し、誤認識文を「不明」にした語。英語は 1 つの語の部品の話者をそろえる
+pub(crate) fn labeled_words(words: &[Word], turns: &[Turn], max_gap: f64, lang: Lang) -> Vec<AssignedWord> {
     let lm = label_map(turns);
     let mut assigned = assign_speakers(words, turns, max_gap, 0.3);
     for w in &mut assigned {
@@ -269,16 +347,19 @@ pub(crate) fn labeled_words(words: &[Word], turns: &[Turn], max_gap: f64) -> Vec
             w.speaker = label.clone();
         }
     }
-    flag_hallucinations(&mut assigned);
+    if lang == Lang::En {
+        join_word_pieces(&mut assigned);
+    }
+    flag_hallucinations(&mut assigned, lang);
     assigned
 }
 
-/// 生ラベルを表示ラベル（話者A…）に直してから、名前を当てて発話にまとめる。既定は max_gap 1.0・merge_gap 1.5
-pub fn build_transcript(words: &[Word], turns: &[Turn], names: Option<&Names>, max_gap: f64, merge_gap: f64) -> Vec<Utterance> {
+/// 生ラベルを表示ラベル（話者A…）に直してから、名前を当てて発話にまとめる。既定は max_gap 1.0・merge_gap 1.5。lang は録音の言語
+pub fn build_transcript(words: &[Word], turns: &[Turn], names: Option<&Names>, max_gap: f64, merge_gap: f64, lang: Lang) -> Vec<Utterance> {
     let lm = label_map(turns);
-    let assigned = labeled_words(words, turns, max_gap);
+    let assigned = labeled_words(words, turns, max_gap, lang);
     let resolved = resolve_names(&lm, names);
-    group_utterances(&assigned, &resolved, merge_gap, 90.0)
+    group_utterances(&assigned, &resolved, merge_gap, 90.0, lang)
 }
 
 // ---- 集計・出力 ------------------------------------------------------------------------
@@ -436,7 +517,7 @@ pub fn write_outputs(out_dir: &Path, names: Option<&Names>) -> io::Result<WriteS
     let meta_p = out_dir.join("meta.json");
     let meta: Meta = if meta_p.exists() { load_json(&meta_p)? } else { Meta::default() };
     let names = names.filter(|n| !n.is_empty());
-    let utts = build_transcript(&words, &turns, names, 1.0, 1.5);
+    let utts = build_transcript(&words, &turns, names, 1.0, 1.5, meta.speech_lang());
     let tt = talk_time(&turns, names);
     let stem = if names.is_some() { "transcript_named" } else { "transcript" };
     fs::write(out_dir.join(format!("{stem}.json")), pyjson::dumps(&utts))?;

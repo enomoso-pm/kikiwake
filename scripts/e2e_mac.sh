@@ -2,7 +2,7 @@
 # 画面（ui/）を本物のエンジンで自動で通す（Phase 2 手順5）。開発用のビルドにだけ入る操作役（src-tauri/dev/*.js・src-tauri/src/dev.rs）を使う。
 # 画面は製品と同じビルド（ui/ の npm run build）。ui/ のファイルは触らない。
 #
-#   bash scripts/e2e_mac.sh [boot|setup|synth|history|en|photo|real|screens]...  既定は synth。SKIP_BUILD=1 でビルドを飛ばす
+#   bash scripts/e2e_mac.sh [boot|setup|synth|history|en|photo|real|screens|speech]...  既定は synth。SKIP_BUILD=1 でビルドを飛ばす
 #   BUNDLE=1 なら .app の形の開発用ビルド（target/debug/bundle/macos/Kikiwake.app）で動かす。Info.plist で決まること
 #   （対応する言語の宣言で、macOS が足すメニューの項目などの言語が変わる）はこちらでないと確かめられない。
 #   識別子がいつもの Kikiwake と同じなので、WebKit の保存（覚えた画面の言語）もいつもの Kikiwake と同じ所になる
@@ -22,6 +22,8 @@
 #            「マニュアル用に、画面の絵も取り出す」→ 保存の .zip。終わったら zip の中身（ファイル・timeline の区間・小窓が黒いか）をここで確かめる。
 #            同じ作業フォルダで 2 回起動する: screens（↑。終わりに判定の版を 1 つ下げる）→ screens2（約束 版14: 前の版で読み取った録画を開くと、
 #            .zip の行が押せず理由と作り直し方が出る → 案内のとおりに選び直すと .zip の行が戻る）
+#     speech 英語の録音（約束 版15）: 英語の合成会議（~/Library/Caches/Kikiwake-dev/synth_en/synth_meeting.wav。リポジトリには入れていない）を
+#            「自動で見分ける」で通し、言語・英語の名前の手がかり・選び直し・一覧の「…」の「日本語で文字起こしし直す…」まで
 #
 # 作業フォルダは ~/Library/Caches/Kikiwake-dev/phase2/e2e/<筋書き>/（毎回まっさらにする）。snap/*.json は見た目の記録（手順5-3）。
 # アプリのデータ（この Mac の速さの記録・覚えた画面の言語）も作業フォルダの中に分け、いつもの Kikiwake に混ぜない。
@@ -74,6 +76,8 @@ elif name in ("history1", "history2"):
               fixtures=fx, cacheDir=f"{work}/cache", saveDir=f"{work}/out", timeoutMin=10, names=json.load(open(f"{fx}/names.json", encoding="utf-8")))
 elif name in ("screens", "screens2"):
     sc.update(recording=rec, cacheDir=f"{work}/cache", timeoutMin=10)
+elif name == "speech":
+    sc.update(recording=rec, expectSpeakers=4, timeoutMin=10)
 elif name == "real":
     sc.update(recording=rec, quiet=True, timeoutMin=45, reopen=os.environ.get("REOPEN") == "1")
     sc.pop("snapDir")
@@ -126,6 +130,7 @@ for sc in "${@:-synth}"; do
       mkdir -p "$(dirname "$REC")"
       cp "$SYNTH" "$REC"
       cp "$SYNTH" "$(dirname "$REC")/定例会議_0926.wav"
+      rm -f "${REC%.*}_文字起こし.md"  # 前に保存したもの（同じ名前があると、保存の確かめが上書きの窓で止まる。speech と同じ）
       ;;
     history)
       REC="$WORK/rec/synth_meeting.wav"
@@ -143,6 +148,14 @@ for sc in "${@:-synth}"; do
       [ -f "$VID" ] || bash "$ROOT/scripts/make_screens_video.sh" "$SYNTH" "$VID" >/dev/null
       REC="$WORK/rec/画面共有デモ.mp4"
       cp "$VID" "$REC"
+      ;;
+    speech)
+      # 英語の合成会議（Mac の読み上げの英語の声で作ったもの。声は配れないので、リポジトリには入れていない）。
+      # KIKIWAKE_E2E_REC で録音を置く場所を変えられる（案内の写真に、ユーザー名の入った場所を写さないため。photo と同じ）
+      REC="${KIKIWAKE_E2E_REC:-$WORK/rec/英語の会議.wav}"
+      mkdir -p "$(dirname "$REC")"
+      cp "$DEV/synth_en/synth_meeting.wav" "$REC"
+      rm -f "${REC%.*}_文字起こし.md"  # 前に保存したもの（同じ名前があると、保存の確かめが上書きの窓で止まる）
       ;;
     real)
       REC="${KIKIWAKE_REAL_SAMPLE:?KIKIWAKE_REAL_SAMPLE に実録音のパスを入れる}"

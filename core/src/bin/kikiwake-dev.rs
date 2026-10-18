@@ -172,15 +172,17 @@ fn screen(dir: &std::path::Path) -> std::io::Result<()> {
     let names: Option<Names> = if names_p.exists() { Some(merge::load_json(&names_p)?) } else { None };
     let audio = std::path::PathBuf::from(meta.audio.clone().unwrap_or_default());
     let dur = meta.duration.unwrap_or(0.0);
-    let utts = merge::build_transcript(&words, &turns, None, 1.0, 1.5);
+    // 録音の言語（meta.json の language。無ければ日本語。エンジンの build_views と同じ）
+    let speech = meta.speech_lang();
+    let utts = merge::build_transcript(&words, &turns, None, 1.0, 1.5, speech);
     let tt = merge::talk_time(&turns, None);
-    let plain: Vec<lines::Line> = lines::lines(&words, &turns, None).into_iter().map(|r| r.line).collect();
+    let plain: Vec<lines::Line> = lines::lines(&words, &turns, None, speech).into_iter().map(|r| r.line).collect();
     fs::write(dir.join("view_transcript.json"), pyjson::dumps(&view::transcript_view(&plain, &tt, &meta, dur, false)))?;
     let sdir = dir.join("samples");
     let _ = fs::remove_dir_all(&sdir);
     fs::create_dir_all(&sdir)?;
-    fs::write(dir.join("speakers.json"), pyjson::dumps(&view::speaker_cards(&utts, &turns, &audio, &sdir, "samples/")?))?;
-    let hints = unresolved::unresolved_hints(&words, &turns, Some(&audio), Some(&sdir), "samples/")?;
+    fs::write(dir.join("speakers.json"), pyjson::dumps(&view::speaker_cards(&utts, &turns, &audio, &sdir, "samples/", speech)?))?;
+    let hints = unresolved::unresolved_hints(&words, &turns, Some(&audio), Some(&sdir), "samples/", speech)?;
     fs::write(dir.join("unresolved_hints.json"), pyjson::dumps(&hints))?;
     let none = LineEdits::default();
     for (_, content) in lines::save_files(&words, &turns, None, &none, &meta, &[SaveFormat::Md], Lang::Ja) {
@@ -188,7 +190,7 @@ fn screen(dir: &std::path::Path) -> std::io::Result<()> {
     }
     if let Some(n) = &names {
         fs::write(dir.join("names_out.json"), pyjson::dumps(n))?;
-        let named: Vec<lines::Line> = lines::lines(&words, &turns, Some(n)).into_iter().map(|r| r.line).collect();
+        let named: Vec<lines::Line> = lines::lines(&words, &turns, Some(n), speech).into_iter().map(|r| r.line).collect();
         let ttn = merge::talk_time(&turns, Some(n));
         fs::write(dir.join("view_transcript_named.json"), pyjson::dumps(&view::transcript_view(&named, &ttn, &meta, dur, true)))?;
         for (_, content) in lines::save_files(&words, &turns, Some(n), &none, &meta, &[SaveFormat::Md], Lang::Ja) {
